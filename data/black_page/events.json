@@ -1,0 +1,52 @@
+{
+  "deadline": {
+    "requires": [
+      {
+        "flag": "day",
+        "op": ">=",
+        "value": 4
+      },
+      {
+        "item": "testimony",
+        "op": "==",
+        "value": 0
+      }
+    ],
+    "text": "约定的联络窗口已经过去。林墨说，有人提前清走了临时住处。也许旧设备还留有信息。",
+    "effects": {
+      "set": {
+        "testimony_lost": true
+      }
+    }
+  },
+  "broken": {
+    "requires": [
+      {
+        "flag": "person.zhou.status",
+        "value": "dead"
+      },
+      {
+        "item": "testimony",
+        "op": "==",
+        "value": 0
+      }
+    ],
+    "text": "周文远的联络点被清空。完整证词的路线断了；旧手机的缓存也许还在。",
+    "effects": {
+      "set": {
+        "testimony_lost": true
+      }
+    }
+  },
+  "day2": {
+    "requires": [
+      {
+        "flag": "day",
+        "op": ">=",
+        "value": 2
+      }
+    ],
+    "text": "手机通知：匿名消息只留下一个约定——第三天之前，可以听到许妍的消息。",
+    "effects": {}
+  }
+}

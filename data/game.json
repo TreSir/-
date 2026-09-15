@@ -1,0 +1,26 @@
+{
+  "id": "lighthouse_demo",
+  "version": 2,
+  "start": "prologue.arrival",
+  "flags": "res://data/flags.json",
+  "characters": "res://data/characters.json",
+  "endings": "res://data/endings.json",
+  "catalog": "res://data/catalog.json",
+  "locales": "res://data/locales.json",
+  "chapters": [
+    "res://data/chapters/prologue.json"
+  ],
+  "node_aliases": {
+    "arrival": "prologue.arrival",
+    "invitation": "prologue.invitation",
+    "repair_intro": "prologue.repair_intro",
+    "repair": "prologue.repair",
+    "film": "prologue.film",
+    "departure": "prologue.finale",
+    "relationship": "prologue.finale",
+    "repair_result": "prologue.finale",
+    "ending_light": "prologue.finale",
+    "ending_wait": "prologue.finale",
+    "ending_alone": "prologue.finale"
+  }
+}

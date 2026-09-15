@@ -1,0 +1,14 @@
+{
+	"mcpServers": {
+		"godot-mcp-toolkit": {
+			"command": "D:\\TREES\\node.exe",
+			"args": [
+				"C:\\Users\\YouheChd\\AppData\\Roaming\\npm\\node_modules\\@npgamedev\\godot-mcp-server\\dist\\index.js"
+			],
+			"env": {
+				"GODOT_MCP_CONFIG_VERSION": "1",
+				"GODOT_MCP_PROJECT_PATH": "C:\\Users\\YouheChd\\Desktop\\HW\\juqinGame\\project-src"
+			}
+		}
+	}
+}

@@ -1,0 +1,80 @@
+{
+  "camera": {
+    "name": "公交站监控",
+    "type": "视频",
+    "description": "23:46，许妍与穿灰色外套的男人并排走向巷口。镜头太远，看不清她的表情。",
+    "case": "missing",
+    "people": [
+      "xu",
+      "zhou"
+    ],
+    "reliability": "reliable",
+    "effects": {
+      "add": {
+        "person.zhou.truth": 8
+      }
+    }
+  },
+  "badge": {
+    "name": "陈东的员工证",
+    "type": "身份记录",
+    "description": "物流公司留存的员工证复印件：陈东。照片与监控中的男人相似。",
+    "case": "missing",
+    "people": [
+      "zhou"
+    ],
+    "reliability": "reliable",
+    "effects": {
+      "set": {
+        "person.zhou.identity": 70
+      }
+    }
+  },
+  "archive": {
+    "name": "八年前才出现的身份",
+    "type": "旧档案",
+    "description": "“陈东”的身份履历只有八年。更早的户籍、学籍全部空白。一个批注指向十三年前的晨曦福利院火灾。",
+    "case": "missing",
+    "people": [
+      "zhou"
+    ],
+    "reliability": "reliable",
+    "effects": {
+      "set": {
+        "person.zhou.identity": 52,
+        "clue.badge.reliability": "forged"
+      },
+      "add": {
+        "person.zhou.truth": 7
+      }
+    }
+  },
+  "photo": {
+    "name": "晨曦福利院旧合照",
+    "type": "照片",
+    "description": "旧合照背面写着“周文远”。耳后的伤痕、转移安置记录与陈东的身体特征一致。陈东与周文远是同一个人。",
+    "case": "missing",
+    "people": [
+      "zhou"
+    ],
+    "reliability": "reliable",
+    "effects": {
+      "set": {
+        "person.zhou.identity": 100
+      }
+    }
+  },
+  "testimony": {
+    "name": "许妍留下的证词",
+    "type": "证词",
+    "description": "“周文远在帮我躲起来。有人要拿走父亲留下的资料，那些人和恒生生物有关。不要把我的位置告诉他们。”",
+    "fallback_description": "旧手机留下半条语音：“别找陈……是我让他来的……”后半段已经损坏。你无法再确认她当时身在何处。",
+    "case": "missing",
+    "people": [
+      "xu",
+      "zhou"
+    ],
+    "reliability": "reliable",
+    "effects": {}
+  }
+}

@@ -1,0 +1,89 @@
+[
+  {
+    "id": "secret",
+    "name": "页角之外",
+    "priority": 100,
+    "requires": [
+      {
+        "flag": "hidden",
+        "value": true
+      },
+      {
+        "flag": "writes",
+        "value": 0
+      },
+      {
+        "flag": "decision",
+        "value": "seal"
+      },
+      {
+        "flag": "person.zhou.truth",
+        "op": ">=",
+        "value": 80
+      }
+    ],
+    "text": "你封存黑页，却留下了那张拓印。\n第一次，你开始调查这本笔记，而不是它要你调查的人。\n首章结束 · 隐藏主线开启"
+  },
+  {
+    "id": "wrong",
+    "name": "错误的正义",
+    "priority": 90,
+    "requires": [
+      {
+        "flag": "writes",
+        "op": ">",
+        "value": 0
+      },
+      {
+        "flag": "decision",
+        "value": "seal"
+      }
+    ],
+    "text": "新闻把一切写成了偶然。你知道不是。\n你合上黑页。那些再也无法回答的问题，仍留在调查笔记里。\n首章结束"
+  },
+  {
+    "id": "judge",
+    "name": "审判者",
+    "priority": 80,
+    "requires": [
+      {
+        "flag": "writes",
+        "op": ">",
+        "value": 0
+      },
+      {
+        "flag": "decision",
+        "value": "keep"
+      }
+    ],
+    "text": "你把笔记留在伸手就能碰到的地方。\n窗外仍有人赶路。你开始在想，下一个名字会是谁。\n首章结束"
+  },
+  {
+    "id": "closed",
+    "name": "合上黑页",
+    "priority": 70,
+    "requires": [
+      {
+        "flag": "writes",
+        "value": 0
+      },
+      {
+        "flag": "decision",
+        "value": "seal"
+      },
+      {
+        "flag": "person.zhou.truth",
+        "op": ">=",
+        "value": 80
+      }
+    ],
+    "text": "你没有写下任何人的名字。\n许妍的消息再次亮起。你把资料交给林墨，把黑页收进抽屉。\n事实还没有全部浮现。但活着的人，还有机会开口。\n首章结束"
+  },
+  {
+    "id": "uncertain",
+    "name": "未完的调查",
+    "priority": 0,
+    "requires": [],
+    "text": "你停下了这一轮调查。得到的答案还不足以解释所有事情。\n桌上的黑页没有替你作出决定。\n首章结束 · 低信息路线"
+  }
+]

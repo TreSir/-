@@ -1,0 +1,25 @@
+{
+  "id": "lighthouse_demo",
+  "version": 1,
+  "start": "arrival",
+  "defaults": {"trust": 0, "puzzle.success": false, "puzzle.score": 0},
+  "nodes": {
+    "arrival": {"type": "say", "speaker": "旁白", "text": "傍晚，你来到一座失去信号的灯塔。\n有人站在门口，等你决定是否留下。", "next": "invitation"},
+    "invitation": {
+      "type": "choice", "speaker": "守塔人", "text": "你愿意帮我接通远方的信号吗？",
+      "options": [
+        {"text": "留下来，一起试试", "effects": {"add": {"trust": 1}}, "next": "repair_intro"},
+        {"text": "沿着海岸独自离开", "next": "departure"}
+      ]
+    },
+    "repair_intro": {"type": "say", "speaker": "守塔人", "text": "收集三个信号，就能让灯塔重新亮起。\n（接下来是独立小游戏示例。）", "next": "repair"},
+    "repair": {"type": "minigame", "text": "修复灯塔的信号装置", "scene": "res://scenes/minigames/signal_game.tscn", "config": {"target": 3}, "result_key": "puzzle", "next": "film"},
+    "departure": {"type": "set", "effects": {"set": {"trust": 0}}, "next": "film"},
+    "film": {"type": "video", "text": "过场视频预留节点", "path": "", "skippable": true, "result_key": "film", "next": "relationship"},
+    "relationship": {"type": "branch", "conditions": [{"var": "trust", "op": ">=", "value": 1}], "then": "repair_result", "else": "ending_alone"},
+    "repair_result": {"type": "branch", "conditions": [{"var": "puzzle.success", "value": true}], "then": "ending_light", "else": "ending_wait"},
+    "ending_light": {"type": "ending", "ending_id": "light", "title": "结局一 · 灯火相连", "text": "灯塔重新亮起。你们听见了远方的回应。"},
+    "ending_wait": {"type": "ending", "ending_id": "wait", "title": "结局二 · 一起等待", "text": "信号没有恢复，但这一次，守塔人不再独自等待。"},
+    "ending_alone": {"type": "ending", "ending_id": "alone", "title": "结局三 · 海岸独行", "text": "你沿着海岸离开。灯塔成为身后一个未完成的故事。"}
+  }
+}

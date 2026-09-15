@@ -1,0 +1,60 @@
+{
+  "zhou": {
+    "name": "陈东",
+    "real_name": "周文远",
+    "role": "约32岁 · 恒远物流员工",
+    "description": "失踪当晚出现在公交站的男人。公司的人叫他陈东。",
+    "identity": 20,
+    "truth": 0,
+    "status": "missing",
+    "case": "missing",
+    "death_text": "手机新闻：物流员工陈某昨夜突然死亡。警方正在核实身份。\n林墨：你为什么刚问完这个人，他就出事了？",
+    "death_effects": {
+      "set": {
+        "case.missing.status": "frozen"
+      },
+      "add": {
+        "linmo_suspicion": 25
+      }
+    }
+  },
+  "xu": {
+    "name": "许妍",
+    "real_name": "许妍",
+    "role": "失踪者 · 资料保管人",
+    "description": "23:38离开便利店，23:46出现在公交站。此后手机关机。",
+    "identity": 100,
+    "truth": 10,
+    "status": "missing",
+    "case": "missing",
+    "death_text": "林墨发来一条消息：许妍被发现时已经没有生命迹象。她随身的资料不见了。",
+    "death_effects": {
+      "set": {
+        "case.missing.status": "frozen",
+        "testimony_lost": true
+      },
+      "add": {
+        "linmo_suspicion": 20
+      }
+    }
+  },
+  "linmo": {
+    "name": "林墨",
+    "real_name": "林墨",
+    "role": "负责失踪案的警察",
+    "description": "他愿意听你说，但一直在观察你怎样回答。",
+    "identity": 100,
+    "truth": 30,
+    "status": "normal",
+    "case": "missing",
+    "death_text": "手机新闻：参与失踪案调查的警员林墨突然去世。案件交由另一组人员接手。",
+    "death_effects": {
+      "set": {
+        "case.missing.status": "frozen"
+      },
+      "add": {
+        "linmo_suspicion": 35
+      }
+    }
+  }
+}

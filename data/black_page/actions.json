@@ -1,0 +1,234 @@
+{
+  "camera": {
+    "name": "还原公交站监控",
+    "kind": "minigame",
+    "scene": "res://scenes/black_page/timeline.tscn",
+    "config": {
+      "prompt": "按发生时间依次选择片段。",
+      "segments": [
+        "23:46  两人离开公交站",
+        "23:38  许妍离开便利店",
+        "23:42  灰衣男人到达站台"
+      ],
+      "order": [
+        1,
+        2,
+        0
+      ]
+    },
+    "case": "missing",
+    "requires": [],
+    "clues": [
+      "camera"
+    ],
+    "text": "雨丝盖住了镜头。你把三个时间片段重新排在一起。\n男人先到，许妍后到。他们一起走了。画面里没有明显的拉扯。",
+    "effects": {}
+  },
+  "badge": {
+    "name": "核对物流公司员工证",
+    "kind": "document",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "camera",
+        "op": ">=",
+        "value": 1
+      }
+    ],
+    "clues": [
+      "badge"
+    ],
+    "text": "人事档案只有一页。照片、姓名、入职日期，看起来都很正常。\n经办人说：“陈东不爱说话，但已经在这里工作很多年。”",
+    "effects": {}
+  },
+  "archive": {
+    "name": "请林墨核查旧身份",
+    "kind": "dialogue",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "badge",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "flag": "person.linmo.status",
+        "op": "!=",
+        "value": "dead"
+      }
+    ],
+    "clues": [
+      "archive"
+    ],
+    "text": "林墨把查询结果转了过来。\n“不是没查到。是八年前，突然多出来这个人。”\n你又看了一眼员工证。它现在只能证明有人在使用这个名字。",
+    "effects": {
+      "add": {
+        "linmo_trust": 5
+      }
+    }
+  },
+  "photo": {
+    "name": "查阅晨曦福利院合照",
+    "kind": "document",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "archive",
+        "op": ">=",
+        "value": 1
+      }
+    ],
+    "clues": [
+      "photo"
+    ],
+    "text": "纸张边缘烧焦了。照片背后留有收养登记编号。\n你把转移记录、伤痕与成年后的照片摆在一起。终于，那个陌生的名字与监控里的脸重合了。\n周文远。",
+    "effects": {}
+  },
+  "testimony": {
+    "name": "赴约，听许妍留下的完整证词",
+    "kind": "dialogue",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "photo",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "flag": "day",
+        "op": "<=",
+        "value": 3
+      },
+      {
+        "flag": "person.zhou.status",
+        "op": "!=",
+        "value": "dead"
+      },
+      {
+        "flag": "person.xu.status",
+        "op": "!=",
+        "value": "dead"
+      },
+      {
+        "item": "testimony",
+        "op": "==",
+        "value": 0
+      }
+    ],
+    "clues": [
+      "testimony"
+    ],
+    "text": "电话里传来很轻的呼吸声。\n许妍：“是我联系他的。父亲出事之前说过，如果有人来找资料，就去找周文远。”\n“我们没有安全多久。请别把躲藏地点写在任何地方。”",
+    "effects": {
+      "set": {
+        "person.zhou.truth": 85,
+        "person.xu.truth": 85,
+        "person.xu.status": "hidden",
+        "case.missing.status": "clear"
+      },
+      "add": {
+        "linmo_trust": 10
+      }
+    }
+  },
+  "fallback": {
+    "name": "打捞旧手机中的残留语音",
+    "kind": "document",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "photo",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "flag": "testimony_lost",
+        "value": true
+      },
+      {
+        "item": "testimony",
+        "op": "==",
+        "value": 0
+      }
+    ],
+    "clues": [
+      "testimony"
+    ],
+    "text": "约定的电话再也没有接通。你只找回了一段残缺的缓存。\n“是我让他来的……”\n这句话足以改变最初的猜测，却不足以填满所有空白。",
+    "effects": {
+      "set": {
+        "person.zhou.truth": 40,
+        "clue.testimony.reliability": "dubious"
+      }
+    }
+  },
+  "cooperate": {
+    "name": "向林墨交代调查来源",
+    "kind": "dialogue",
+    "case": "missing",
+    "requires": [
+      {
+        "flag": "person.linmo.status",
+        "op": "!=",
+        "value": "dead"
+      }
+    ],
+    "clues": [],
+    "text": "你把监控的来源、查过的文件逐一告诉林墨。\n“下次先联系我。”他沉默片刻，又说，“还有，别独自去见人。”",
+    "effects": {
+      "add": {
+        "linmo_trust": 15
+      }
+    }
+  },
+  "notebook": {
+    "name": "核对旧档案上的黑色页角",
+    "kind": "document",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "testimony",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "flag": "person.zhou.truth",
+        "op": ">=",
+        "value": 80
+      }
+    ],
+    "clues": [],
+    "text": "福利院移交清单里，夹着一张无主笔记的拓印。\n纸纹与你桌上的黑页完全一样。页角写着：“名字不是终点。”\n你把这行字记在调查日志里。",
+    "effects": {
+      "set": {
+        "hidden": true
+      }
+    }
+  },
+  "archive_public": {
+    "name": "查阅公开身份档案",
+    "kind": "document",
+    "case": "missing",
+    "requires": [
+      {
+        "item": "badge",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "item": "archive",
+        "op": "==",
+        "value": 0
+      },
+      {
+        "flag": "person.linmo.status",
+        "value": "dead"
+      }
+    ],
+    "clues": [
+      "archive"
+    ],
+    "text": "林墨已经无法回复。你只能沿着公开的旧报纸和身份登记索引查找。\n“陈东”的历史在八年前戛然而止。福利院火灾的剪报边缘，留着同一个登记编号。",
+    "effects": {}
+  }
+}

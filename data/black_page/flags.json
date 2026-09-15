@@ -1,0 +1,268 @@
+{
+  "day": {
+    "type": "int",
+    "default": 1,
+    "min": 1,
+    "max": 9999
+  },
+  "actions_left": {
+    "type": "int",
+    "default": 3,
+    "min": 0,
+    "max": 3
+  },
+  "linmo_trust": {
+    "type": "int",
+    "default": 30,
+    "min": 0,
+    "max": 100
+  },
+  "linmo_suspicion": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
+  "erosion": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
+  "writes": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
+  "wrong_writes": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
+  "hidden": {
+    "type": "bool",
+    "default": false
+  },
+  "decision": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "seal",
+      "keep"
+    ]
+  },
+  "ending": {
+    "type": "string",
+    "default": ""
+  },
+  "testimony_lost": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.completed": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.identity": {
+    "type": "int",
+    "default": 20,
+    "min": 0,
+    "max": 100
+  },
+  "person.zhou.truth": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
+  "person.zhou.status": {
+    "type": "string",
+    "default": "missing",
+    "values": [
+      "normal",
+      "missing",
+      "fugitive",
+      "injured",
+      "dead",
+      "arrested",
+      "hidden",
+      "left"
+    ]
+  },
+  "person.zhou.discovered": {
+    "type": "bool",
+    "default": true
+  },
+  "person.xu.identity": {
+    "type": "int",
+    "default": 100,
+    "min": 0,
+    "max": 100
+  },
+  "person.xu.truth": {
+    "type": "int",
+    "default": 10,
+    "min": 0,
+    "max": 100
+  },
+  "person.xu.status": {
+    "type": "string",
+    "default": "missing",
+    "values": [
+      "normal",
+      "missing",
+      "fugitive",
+      "injured",
+      "dead",
+      "arrested",
+      "hidden",
+      "left"
+    ]
+  },
+  "person.xu.discovered": {
+    "type": "bool",
+    "default": true
+  },
+  "person.linmo.identity": {
+    "type": "int",
+    "default": 100,
+    "min": 0,
+    "max": 100
+  },
+  "person.linmo.truth": {
+    "type": "int",
+    "default": 30,
+    "min": 0,
+    "max": 100
+  },
+  "person.linmo.status": {
+    "type": "string",
+    "default": "normal",
+    "values": [
+      "normal",
+      "missing",
+      "fugitive",
+      "injured",
+      "dead",
+      "arrested",
+      "hidden",
+      "left"
+    ]
+  },
+  "person.linmo.discovered": {
+    "type": "bool",
+    "default": true
+  },
+  "case.missing.status": {
+    "type": "string",
+    "default": "investigating",
+    "values": [
+      "undiscovered",
+      "investigating",
+      "blocked",
+      "clear",
+      "frozen"
+    ]
+  },
+  "clue.camera.reliability": {
+    "type": "string",
+    "default": "reliable",
+    "values": [
+      "reliable",
+      "dubious",
+      "contradictory",
+      "forged"
+    ]
+  },
+  "clue.badge.reliability": {
+    "type": "string",
+    "default": "reliable",
+    "values": [
+      "reliable",
+      "dubious",
+      "contradictory",
+      "forged"
+    ]
+  },
+  "clue.archive.reliability": {
+    "type": "string",
+    "default": "reliable",
+    "values": [
+      "reliable",
+      "dubious",
+      "contradictory",
+      "forged"
+    ]
+  },
+  "clue.photo.reliability": {
+    "type": "string",
+    "default": "reliable",
+    "values": [
+      "reliable",
+      "dubious",
+      "contradictory",
+      "forged"
+    ]
+  },
+  "clue.testimony.reliability": {
+    "type": "string",
+    "default": "reliable",
+    "values": [
+      "reliable",
+      "dubious",
+      "contradictory",
+      "forged"
+    ]
+  },
+  "action.camera.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.badge.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.archive.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.photo.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.testimony.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.fallback.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.cooperate.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.notebook.done": {
+    "type": "bool",
+    "default": false
+  },
+  "event.deadline.done": {
+    "type": "bool",
+    "default": false
+  },
+  "event.broken.done": {
+    "type": "bool",
+    "default": false
+  },
+  "event.day2.done": {
+    "type": "bool",
+    "default": false
+  },
+  "action.archive_public.done": {
+    "type": "bool",
+    "default": false
+  }
+}

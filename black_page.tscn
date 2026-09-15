@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://i5dio1s5onh1"]
+
+[ext_resource type="PackedScene" path="res://scenes/black_page/main.tscn" id="1_n4bbw"]
+
+[node name="BlackPage" unique_id=1460413795 instance=ExtResource("1_n4bbw")]
+
+[node name="BlackPage" parent="." index="1" unique_id=432216034 instance=ExtResource("1_n4bbw")]
+layout_mode = 1
+offset_left = 397.0
+offset_top = 89.0
+offset_right = 397.0
+offset_bottom = 89.0

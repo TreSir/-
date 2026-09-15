@@ -1,0 +1,54 @@
+{
+  "missing": {
+    "name": "许妍失踪案",
+    "intro": "许妍于昨夜失去联系。最后的监控里，她与一个男人一起离开公交站。",
+    "status": "investigating",
+    "questions": [
+      {
+        "text": "监控里的男人是谁？",
+        "requires": [
+          {
+            "item": "badge",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "text": "“陈东”为什么没有早年的记录？",
+        "requires": [
+          {
+            "item": "badge",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "item": "photo",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "text": "许妍是被带走，还是主动离开？",
+        "requires": [
+          {
+            "item": "testimony",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "text": "恒生生物为什么寻找许妍父亲的资料？",
+        "requires": [
+          {
+            "item": "testimony",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      }
+    ]
+  }
+}
