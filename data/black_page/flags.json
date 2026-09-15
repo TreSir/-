@@ -261,6 +261,22 @@
     "type": "bool",
     "default": false
   },
+  "ui.case": {
+    "type": "bool",
+    "default": false
+  },
+  "ui.notebook": {
+    "type": "bool",
+    "default": false
+  },
+  "ui.people": {
+    "type": "bool",
+    "default": false
+  },
+  "ui.pocket": {
+    "type": "bool",
+    "default": false
+  },
   "action.archive_public.done": {
     "type": "bool",
     "default": false

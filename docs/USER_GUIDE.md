@@ -54,7 +54,7 @@
 | 新增小游戏 | `scenes/minigames/` 与 `scripts/minigames/` |
 | 新增剧情指令 | `scripts/commands/` |
 
-**当前使用的是 data/ 下的 V2 数据。** `story/demo.json` 是旧版示例，不是现在 F5 运行的剧本。
+**当前使用的是 data/ 下的 V2 数据。**
 
 `res://` 表示项目目录，比如 `res://data/flags.json` 对应 `project-src/data/flags.json`。
 `user://` 表示玩家数据目录，用于存档，不在项目源代码目录里。
@@ -859,7 +859,7 @@ func execute(_runtime, node: Dictionary) -> Dictionary:
 
 | 现象 | 常见原因与处理 |
 | --- | --- |
-| 改了台词没有效果 | 编辑了旧 story/demo.json；或当前没有停在被改节点 |
+| 改了台词没有效果 | 当前没有停在被改节点；或改的是未挂到 chapters 里的文件 |
 | 未知 Flag：trsut | 名字拼错，或未在 flags.json 声明 |
 | 不存在的节点 | next 拼错，跨章节缺少章节 ID，或章节未加入 chapters |
 | 选项不显示 | conditions 不满足；用 F1 get 检查实际状态 |

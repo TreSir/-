@@ -1,0 +1,25 @@
+{
+  "default": {
+    "kind": "fade",
+    "out": 0.26,
+    "in": 0.42,
+    "color": "000000"
+  },
+  "scenes": {
+    "notebook": {
+      "kind": "cut"
+    },
+    "archive": {
+      "kind": "fade",
+      "out": 0.34,
+      "in": 0.52
+    }
+  },
+  "actions": {
+    "photo": {
+      "kind": "fade",
+      "out": 0.6,
+      "in": 0.9
+    }
+  }
+}

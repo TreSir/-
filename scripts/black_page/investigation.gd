@@ -29,6 +29,22 @@ func new_game() -> void:
 	GameState.reset()
 	changed.emit()
 
+## 点亮一个侧栏入口。
+##
+## 为什么需要它：开场先要有一段剧情（手机震动 → 读到消息 → 自言自语），
+## 剧情走完才该出现「案件」这些图标。而 `effects` 只在**行动**里跑，
+## 开场这段不是行动，没有任何地方能写旗标——所以补这个口子。
+## 界面调这个，不要越过游戏模块去直接改底层状态。
+func reveal_ui(keys: Array) -> String:
+	var patch := {}
+	for key in keys:
+		patch["ui." + str(key)] = true
+	if patch.is_empty(): return ""
+	var error: String = GameState.apply({"set": patch})
+	if not error.is_empty(): return error
+	changed.emit()
+	return ""
+
 func flag(id: String) -> Variant: return GameState.flags.get(id)
 func owns(id: String) -> bool: return GameState.inventory.get(id, 0) > 0
 func matches(conditions: Array) -> bool: return Rules.matches(conditions, GameState.flags, GameState.inventory)

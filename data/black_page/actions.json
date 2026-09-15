@@ -22,7 +22,11 @@
       "camera"
     ],
     "text": "雨丝盖住了镜头。你把三个时间片段重新排在一起。\n男人先到，许妍后到。他们一起走了。画面里没有明显的拉扯。",
-    "effects": {}
+    "effects": {
+      "set": {
+        "person.zhou.discovered": true
+      }
+    }
   },
   "badge": {
     "name": "核对物流公司员工证",

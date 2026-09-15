@@ -9,7 +9,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
 	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}, "entries": {}}}
-	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings"]:
+	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "opening"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
 		sources[name] = source

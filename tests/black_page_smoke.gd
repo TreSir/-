@@ -2,6 +2,7 @@ extends Node
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Store = preload("res://scripts/core/save_store.gd")
+const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
 var failures := 0
 var game = Investigation.new()
@@ -12,6 +13,24 @@ func check(value: bool, message: String) -> void:
 	if not value:
 		failures += 1
 		push_error("BLACK_PAGE CHECK FAILED: " + message)
+
+## 在指定坐标模拟一次真实的左键点击（按下 + 抬起）。
+##
+## 必须走 viewport.push_input 而不是直接 emit pressed：只有真实事件才会经过
+## Godot 的 GUI 命中测试，才能发现「某个全屏 Control 挡在上面把点击吃掉」这类问题。
+##
+## in_local_coords 必须传 true：默认 false 时事件坐标按【窗口】坐标解释，
+## 会被 stretch 变换（1152x720 → 1280x800）再换算一次，导致命中位置整体偏移。
+func _click_at(ui: Node, position: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.position = position
+	event.global_position = position
+	event.pressed = true
+	ui.get_viewport().push_input(event, true)
+	var release := event.duplicate() as InputEventMouseButton
+	release.pressed = false
+	ui.get_viewport().push_input(release, true)
 
 func act(id: String) -> void:
 	check(game.begin_action(id).is_empty(), "begin " + id)
@@ -118,11 +137,29 @@ func _ui() -> void:
 	ui._start_new_game()
 	await get_tree().create_timer(0.6).timeout
 	check(is_instance_valid(ui.prologue) and not ui.shell.visible, "opening prologue gates investigation hub")
+	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED
+	ui.prologue.step = 3
+	ui.prologue._render_page()
+	check(ui.prologue._speed == 26.0, "page speed overrides the global typing speed")
+	ui.prologue.step = 0
+	ui.prologue._render_page()
+	check(ui.prologue._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
+	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态
+	ui.prologue._auto = true
+	ui.prologue._refresh_auto()
+	check(ui.prologue._auto_link.text == "自动中", "auto mode marks itself on the button")
+	ui.prologue._auto = false
+	ui.prologue._refresh_auto()
+	check(ui.prologue._auto_link.text == "自动", "auto mode reverts the button label")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_prologue.png")
 	for _step in 5: ui.prologue._advance()
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await get_tree().create_timer(1.1).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_chapter.png")
 	await get_tree().create_timer(1.8).timeout
 	check(not is_instance_valid(ui.prologue) and ui.shell.visible and ui.game.flag("prologue.completed"), "first writing sequence reveals title and hub")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
@@ -130,14 +167,76 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_room.png")
-	for page in ["cases", "people", "clues", "notebook"]:
-		ui._navigate(page)
-		check(ui.rows.get_child_count() > 0, "panel " + page)
-		if "--capture-render" in OS.get_cmdline_user_args():
-			await get_tree().process_frame
-			await RenderingServer.frame_post_draw
-			get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_" + page + ".png")
-	ui._start_action("camera")
+	ui._toggle_menu()
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_menu.png")
+	ui._close_menu()
+	# 左侧栏是常驻的四个系统功能，点开各自的面板。
+	# 这类问题来自「全屏容器默认 MOUSE_FILTER_STOP 盖在上面吃点击」，
+	# 直接调方法测不出来，必须模拟真实鼠标点击。
+	# 开局：四个入口**全部锁着**，要把开场那段（手机震动 → 消息 → 自言自语）点完才出现
+	await get_tree().create_timer(1.0).timeout
+	check(not ui.nav_buttons["case"].visible, "no rail icons before the opening plays")
+	var opening_guard := 0
+	while not ui.nav_buttons["case"].visible and opening_guard < 30:
+		_click_at(ui, Vector2(200, 200))
+		await get_tree().create_timer(0.12).timeout
+		opening_guard += 1
+	check(ui.nav_buttons["case"].visible, "case icon unlocks after the opening")
+	await get_tree().create_timer(1.2).timeout
+
+	_click_at(ui, ui.nav_buttons["people"].get_global_rect().get_center())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(ui.modal.visible and ui._open_panel == "people", "side rail opens the people panel on a real click")
+	# 图鉴正文（codex.json）必须真的进到 bundle 里，单人页才有的显示
+	check(ui.game.bundle.has("codex") and not ui.game.bundle.codex.is_empty(), "codex data loaded")
+	ui._open_person("zhou")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(ui.modal.visible and ui._open_panel == "people", "person codex page opens")
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_people.png")
+	# 案件面板里挂着调查方向
+	ui._open_case()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(ui.modal.visible and ui._open_panel == "case", "case panel opens")
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_case.png")
+	ui._close_modal()
+	# 三条杠
+	_click_at(ui, ui._menu_button.get_global_rect().get_center())
+	await get_tree().process_frame
+	check(ui._menu_layer.visible, "hamburger opens the menu on a real click")
+	_click_at(ui, ui._menu_button.get_global_rect().get_center())
+	await get_tree().process_frame
+	check(not ui._menu_layer.visible, "clicking outside closes the menu")
+	# 顶栏的「黑页」点回房间
+	_click_at(ui, ui._logo_button.get_global_rect().get_center())
+	# 回房间会走转场，等它走完再看场景
+	await get_tree().create_timer(1.0).timeout
+	check(ui.scene_id == "room", "top bar breadcrumb responds to a real click")
+
+	# 黑页面板会把场景切走
+	ui._open_notebook()
+	await get_tree().create_timer(0.1).timeout
+	check(ui.scene_id == "notebook", "opening the notebook switches the scene")
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_notebook.png")
+	ui._close_modal()
+	ui._enter_room()
+	await get_tree().process_frame
+
+	# 小游戏
+	# _investigate 里有转场（异步），要等它走完再取弹层内容
+	ui._investigate("camera")
+	await get_tree().create_timer(1.0).timeout
 	var activity = ui.modal_rows.get_child(1)
 	activity._select(0)
 	check(activity.selected.is_empty(), "minigame incorrect choice resets")
@@ -146,4 +245,20 @@ func _ui() -> void:
 	await get_tree().process_frame
 	ui.modal_rows.get_child(2).pressed.emit()
 	check(ui.game.owns("camera") and ui.game.flag("actions_left") == 2 and not ui.modal.visible, "UI minigame reward once and return")
+	await get_tree().process_frame
+
+	# 调查：场景整张切换 → 底部逐句读 → 读完自动结算回房间（主界面没有推进按钮）
+	ui._investigate("badge")
+	await get_tree().create_timer(1.0).timeout
+	check(ui.scene_id != "room", "investigation switches the scene")
+	if "--capture-render" in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_scene.png")
+	# 每次点击之间留一点时间：转场期间遮罩会吃掉点击，不能只等一帧
+	var guard := 0
+	while ui.scene_id != "room" and guard < 24:
+		_click_at(ui, Vector2(200, 200))
+		await get_tree().create_timer(0.12).timeout
+		guard += 1
+	check(ui.scene_id == "room" and ui.game.flag("actions_left") == 1, "reading the report settles the action and returns to the room")
 	ui.free()
