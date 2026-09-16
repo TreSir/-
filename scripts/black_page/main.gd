@@ -504,33 +504,11 @@ func _enter_room(note_error: String = "", note_success: String = "") -> void:
 	if not note_error.is_empty() or not note_success.is_empty():
 		_message(note_error, note_success)
 
-## 序章结束后走这里：先播开场那段（如果还没播过），否则直接进房间。
+## 序章结束后走这里。序章自己已经把该解锁的入口写进状态（人物 / 口袋），
+## 案件和黑页要玩家在房间里碰实体才出现——所以这里只管进房间。
 func _reveal_game() -> void:
 	_reveal_hud(true)
-	if not bool(game.flag("ui.case")):
-		_play_opening()
-		return
 	_enter_room()
-
-## 开场：手机在床头柜上震动 → 读到林墨的消息 → 自言自语 → 案件图标出现。
-## 文案在 `data/black_page/opening.json`，改剧情去那儿改。
-func _play_opening() -> void:
-	var entry: Dictionary = game.bundle.get("opening", {})
-	var beats: Array = []
-	for beat in entry.get("beats", []):
-		beats.append(str(beat.get("text", "")))
-	if beats.is_empty():
-		var error: String = game.reveal_ui(entry.get("unlock", ["case"]))
-		if not error.is_empty(): push_warning(error)
-		_enter_room()
-		return
-	_in_room = false
-	_apply_scene(str(entry.get("scene", Scenes.PHONE)))
-	var unlock: Array = entry.get("unlock", ["case"])
-	_say(beats, func():
-		var error: String = game.reveal_ui(unlock)
-		if not error.is_empty(): push_warning(error)
-		_enter_room())
 
 ## 把最近一条叙述性日志当成「当前台词」。
 func _latest_line() -> String:
