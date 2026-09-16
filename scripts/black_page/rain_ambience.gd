@@ -11,10 +11,23 @@ extends AudioStreamPlayer
 
 const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 
-const TRACK := AudioTracks.RAIN_DEFAULT
+## 默认雨声。
+##
+## 之前用的是 `rain_steady`（原始素材是「School day / Rain」——**雨天的学校**），
+## 录音里除了雨还有环境声和低频轰鸣，放在「深夜出租屋」里是不对的。
+## 换成 `rain_light`（原始素材就是「Light rain」），干净得多。
+## 想换回来或换别的，只改这一行常量；备选都在 audio_tracks.gd 的 RAIN_ALTERNATIVES。
+const TRACK := AudioTracks.RAIN_LIGHT
 const PLAY_DB := -13.0
 const SILENT_DB := -80.0
 const FADE_IN := 2.5
+
+## 雨声单独走一条总线，别挂在 Master 上——那会把音乐和音效一起滤掉。
+const BUS_NAME := "Rain"
+## 高通截止：**切掉录音里的低频轰鸣**。
+## 雨的嘶声主要在上千赫兹，几百赫兹以下基本是环境轰鸣，
+## 切 260Hz 既能去掉闷响，又不会把雨声变薄。
+const HPF_HZ := 260.0
 
 var muted_by_player := false
 
@@ -22,6 +35,8 @@ var _fade: Tween
 
 
 func _ready() -> void:
+	# 先备好总线（挂高通），再起播。
+	bus = _ensure_rain_bus()
 	var track := _load_track(TRACK)
 	if track == null:
 		return
@@ -31,6 +46,25 @@ func _ready() -> void:
 	# 反复开关也不会产生重新起播的爆音。
 	play()
 	_fade_to(PLAY_DB, FADE_IN)
+
+
+## 建（或复用）雨声总线并挂上高通。重复运行是安全的。
+func _ensure_rain_bus() -> String:
+	var index := AudioServer.get_bus_index(BUS_NAME)
+	if index < 0:
+		index = AudioServer.bus_count
+		AudioServer.add_bus(index)
+		AudioServer.set_bus_name(index, BUS_NAME)
+	var has_hpf := false
+	for i in AudioServer.get_bus_effect_count(index):
+		if AudioServer.get_bus_effect(index, i) is AudioEffectHighPassFilter:
+			has_hpf = true
+			break
+	if not has_hpf:
+		var hpf := AudioEffectHighPassFilter.new()
+		hpf.cutoff_hz = HPF_HZ
+		AudioServer.add_bus_effect(index, hpf, 0)
+	return BUS_NAME
 
 
 ## OGG 的循环标志在导入设置里可能没打开，这里兜底强制打开。

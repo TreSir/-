@@ -187,7 +187,8 @@ func _build() -> void:
 	_top.add_child(top_spacer)
 	_auto_link = _top_link("自动", func(): _auto = not _auto; _refresh_auto())
 	_top.add_child(_auto_link)
-	_top.add_child(_top_link("跳过 ▸▸", _show_title))
+	# 「跳过」= 跳过整段序章，直接交接给第一章。
+	_top.add_child(_top_link("跳过 ▸▸", _finish))
 
 	# 底部对话框：和主界面共用同一个组件——底边钉死，长文本向上长。
 	card = UI.dialogue_box()
@@ -338,6 +339,9 @@ func _render_page() -> void:
 	# 标题卡独立成屏，不挂底部字幕带。
 	var is_title := str((entry.get("visual", {}) as Dictionary).get("type", "")) == "title"
 	card.visible = not is_title
+	# 标题卡要**全黑**：底部的字幕带和顶部的「自动／跳过」都得收掉。
+	# 只藏字幕带的话，屏幕上还剩着顶栏那几个字，就不是全黑了。
+	_top.visible = not is_title
 
 	# 进度条：走过多少页就亮多少。定宽，不跟着页数涨。
 	if _progress_fill != null:
@@ -760,6 +764,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_tap()
 
 ## 无条件翻页：给测试与程序化调用用。玩家输入走 _tap()。
+##
+## 翻过最后一页就是序章结束。
+## **不要在结尾再弹一次标题卡**——「黑页」这个标题在数据里已经有自己的一页
+## （`game_title`，正文走完之后、许妍电话之前），那是它唯一该出现的地方。
+## 旧版这里会调 _show_title() 把游戏名再放一遍，结果屏幕上弹了两次《黑页》，
+## 而且第一次因为顶栏没收掉、看起来还不全黑。
 func _advance() -> void:
 	if _finishing:
 		return
@@ -767,51 +777,16 @@ func _advance() -> void:
 		step += 1
 		_render_page()
 		return
-	_show_title()
+	_finish()
 
 ## 章节标题卡：**只有游戏名**，别的什么都没有。
 ## 字从略小缓慢放大，配合淡入——不做按钮、不做副标题、不做装饰线。
-func _show_title() -> void:
-	if _finishing:
-		return
-	_finishing = true
-	card.hide()
-	_top.hide()
-	_typer.set_line("")
-
-	# 标题卡把屏幕压成**全黑**，后面的场景图完全不参与。
-	var scrim := ColorRect.new()
-	scrim.color = Color.BLACK
-	scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	scrim.modulate.a = 0.0
-	add_child(scrim)
-
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
-	var words := UI.heading("黑　页", int(UI.SIZE_CHAPTER * 0.72))
-	words.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	words.modulate.a = 0.0
-	center.add_child(words)
-
-	# 用字号补间做「缓慢变大」：比 scale 省事，也不用管 pivot_offset 什么时候才准。
-	var tween := create_tween().set_parallel()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_property(scrim, "modulate:a", 1.0, 0.55)
-	tween.tween_property(words, "modulate:a", 1.0, 0.9)
-	tween.tween_method(
-		func(value: float): words.add_theme_font_size_override("font_size", int(value)),
-		UI.SIZE_CHAPTER * 0.72, float(UI.SIZE_CHAPTER), 1.5)
-
-	await get_tree().create_timer(1.5).timeout
-	_finish()
-
+## 序章结束：把该写的状态写掉，交接给第一章。
 func _finish() -> void:
 	if _done or not is_inside_tree():
 		return
 	_done = true
+	_finishing = true
 	if game != null: game.apply_state({"prologue.completed": true})
 	finished.emit()
 	queue_free()
