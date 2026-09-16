@@ -1,5 +1,7 @@
 extends Control
-## Procedural placeholder set, replaceable by illustrated background assets.
+## 房间场景 = 正式插画 + 叠在上面的程序化雨意。
+## 雨丝、明暗起伏和暗角都在 `_draw()` 里现画，所以这儿只吃一张背景图就够。
+## 可点热区不在这里——那是 main.gd 的 Hotspots 管的事。
 const BACKGROUND = preload("res://assets/backgrounds/black_page_room_v1.png")
 var elapsed := 0.0
 
