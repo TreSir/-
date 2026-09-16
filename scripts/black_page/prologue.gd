@@ -15,6 +15,8 @@ signal finished
 const UI = preload("res://scripts/black_page/ui_style.gd")
 ## 热区建层与 UV 换算的共用组件——房间那套也用它，别再各写一份。
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
+## 逐字显示。主界面那套也是同一个组件——打字机全项目只此一份。
+const Typewriter = preload("res://scripts/core/typewriter.gd")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
 const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
@@ -100,8 +102,8 @@ var _auto := false
 var _auto_clock := 0.0
 var _auto_link: Button
 var _auto_tween: Tween
-var _reveal := 0.0
-var _full := ""
+## 逐字显示当前这一段。求「该显示什么」交给 Typewriter。
+var _typer := Typewriter.new()
 var _finishing := false
 var _done := false
 var _card_tween: Tween
@@ -339,8 +341,7 @@ func _lines_of(text: String) -> Array:
 ##
 ## 段内换行用 `<br>`（不是 \n）——`\n` 是分段，`<br>` 只是把句子挪到下一行，不多点一次。
 func _show_beat() -> void:
-	_full = str(_beats[_beat]).replace("<br>", "\n")
-	_reveal = 0.0
+	_typer.set_line(str(_beats[_beat]), _speed)
 	body.text = ""
 	if _body_scroll != null:
 		_body_scroll.scroll_vertical = 0
@@ -549,21 +550,19 @@ func _is_last_beat() -> bool:
 	return _beat >= _beats.size() - 1
 
 func _process(delta: float) -> void:
-	if _full.is_empty() or body.text.length() >= _full.length():
-		# 整页读完（最后一段也打完了），才提示这一页要做什么。
-		# 没读完就冒出来，玩家还没看懂发生什么就能把剧情推过去，很假。
-		if _is_last_beat() and _hint.text.is_empty() and not _full.is_empty() and step < pages.size():
-			_hint.text = "%s  ▸" % pages[step].action
-		if _auto and not _finishing:
-			_auto_clock += delta
-			if _auto_clock > 2.2 and _reveal > 0.0:
-				_tap()
+	_typer.tick(delta)
+	body.text = _typer.visible_text()
+	if not _typer.is_done():
+		# 还在打字：自动模式不计时，免得打完就跳。
+		if _auto: _auto_clock = 0.0
 		return
-	_reveal += delta * _speed
-	var count := int(minf(_reveal, float(_full.length())))
-	body.text = _full.substr(0, count)
-	if _auto:
-		_auto_clock = 0.0
+	# 整页读完（最后一段也打完了），才提示这一页要做什么。
+	# 没读完就冒出来，玩家还没看懂发生什么就能把剧情推过去，很假。
+	if _is_last_beat() and _hint.text.is_empty() and step < pages.size():
+		_hint.text = "%s  ▸" % pages[step].action
+	if _auto and not _finishing:
+		_auto_clock += delta
+		if _auto_clock > 2.2: _tap()
 
 ## 自动模式必须在按钮上看得出来：文字变「自动中」、变亮、并且呼吸。
 ## 不然玩家点完之后根本不知道自己正处在什么状态。
@@ -585,7 +584,7 @@ func _refresh_auto() -> void:
 	_auto_tween.tween_property(_auto_link, "modulate:a", 1.0, 0.7)
 
 func _is_typing() -> bool:
-	return body.text.length() < _full.length()
+	return not _typer.is_done()
 
 ## 玩家的点击：先补完打字 → 再一段一段过 → 最后才翻页。
 func _tap() -> void:
@@ -593,8 +592,9 @@ func _tap() -> void:
 		_finish()
 		return
 	if _is_typing():
-		body.text = _full
-		_reveal = float(_full.length())
+		# 点击的第一段行为：先把这一句补完，不翻页。
+		_typer.complete()
+		body.text = _typer.visible_text()
 		return
 	# 这一页还有下一段就出下一段，没有了才翻页。
 	if not _is_last_beat():
@@ -628,7 +628,7 @@ func _show_title() -> void:
 	_finishing = true
 	card.hide()
 	_top.hide()
-	_full = ""
+	_typer.set_line("")
 
 	# 标题卡把屏幕压成**全黑**，后面的场景图完全不参与。
 	var scrim := ColorRect.new()

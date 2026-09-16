@@ -25,6 +25,8 @@ const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
+## 逐字显示。序章那套也是同一个组件——打字机全项目只此一份。
+const Typewriter = preload("res://scripts/core/typewriter.gd")
 const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
@@ -71,8 +73,8 @@ var _modal_panel: PanelContainer
 var _modal_scroll: ScrollContainer
 var _queue: Array = []
 var _on_done: Callable = Callable()
-var _target_line := ""
-var _reveal := 0.0
+## 逐字显示当前这一句。求「该显示什么」交给 Typewriter——打字机全项目只此一份。
+var _typer := Typewriter.new()
 ## 当前这批叙述的打字速度。用 _say() 的 speed 参数覆盖，默认取全局。
 var _beat_speed := UI.TYPE_SPEED
 var _in_room := true
@@ -317,17 +319,15 @@ func _build_shell() -> void:
 
 func _process(delta: float) -> void:
 	# 打字机：剧情文本逐字出。没走完之前，点击只会把这一句补完，不会推进。
-	if _target_line.is_empty() or notice.text.length() >= _target_line.length():
-		return
-	_reveal += delta * _beat_speed
-	notice.text = _target_line.substr(0, int(minf(_reveal, float(_target_line.length()))))
+	_typer.tick(delta)
+	notice.text = _typer.visible_text()
 
 func _is_typing() -> bool:
-	return notice.text.length() < _target_line.length()
+	return not _typer.is_done()
 
 func _finish_typing() -> void:
-	notice.text = _target_line
-	_reveal = float(_target_line.length())
+	_typer.complete()
+	notice.text = _typer.visible_text()
 
 func _build_menu() -> void:
 	_menu_layer = Control.new()
@@ -477,10 +477,9 @@ func _show_next_beat() -> void:
 		if done.is_valid(): done.call()
 		return
 	# 段内换行用 <br>，不是 \n——\n 是分段（点一次），<br> 只挪到下一行，不多点一次。
-	_target_line = str(_queue.pop_front()).replace("<br>", "\n")
-	_reveal = 0.0
+	_typer.set_line(str(_queue.pop_front()), _beat_speed)
 	notice.text = ""
-	_set_speaker(_target_line)
+	_set_speaker(_typer.full_text())
 
 func _advance_story() -> void:
 	_close_menu()
@@ -833,8 +832,7 @@ func refresh() -> void:
 	notice.text = line
 	notice.add_theme_color_override("font_color", Color("dae6ec"))
 	# 系统刷新直接落全文，不走打字机（这不是剧情推进，不需要逐字）。
-	_target_line = line
-	_reveal = float(line.length())
+	_typer.set_line_now(line)
 
 func _refresh_pips() -> void:
 	var left := int(game.flag("actions_left"))
@@ -1273,8 +1271,7 @@ func _message(error: String, success: String = "") -> void:
 	notice.text = text
 	notice.add_theme_color_override("font_color", UI.AMBER if not error.is_empty() else Color("d9e6ec"))
 	# 提示直接落全文，不走打字机。
-	_target_line = text
-	_reveal = float(text.length())
+	_typer.set_line_now(text)
 	if not error.is_empty(): push_warning(error)
 
 func _unhandled_key_input(event: InputEvent) -> void:

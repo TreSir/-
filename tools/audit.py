@@ -224,7 +224,13 @@ class Audit:
                 s = line.strip()
                 if not s.startswith("##"):
                     continue
+                # 文档注释里  之后缩进 >= 4 空格的是**代码示例**，不是英文残留。
+                if s[2:].startswith("    "):
+                    continue
                 if re.search(r"[\u4e00-\u9fff]", s):
+                    continue
+                # 文档注释里缩进 >= 4 空格的行是**代码示例**，不是英文残留。
+                if line.startswith("    "):
                     continue
                 if re.search(r"[a-zA-Z]{5,}", s) and not FORMULA_LINE.search(s):
                     out.append(f"{p.relative_to(self.root).as_posix()}:{i}")
