@@ -74,7 +74,7 @@
       "body": "第一页不是空白。\n字迹不像印刷，更像有人刚用钢笔写上去。\n“……什么东西？”\n“恶作剧？”",
       "action": "翻到下一页",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "写下他的真实姓名。\n\n记住他的脸。\n\n他会死。\n\n不要写你不认识的人。", "size": 18, "rect": [0.22, 0.25, 0.27, 0.43]}
+      "visual": {"type": "notebook", "text": "写下他的真实姓名。\n\n记住他的脸。\n\n他会死。\n\n不要写你不认识的人。", "size": 18, "rect": [0.50, 0.46, 0.27, 0.30]}
     },
     {
       "id": "existing_name",
@@ -82,7 +82,7 @@
       "body": "第二页已经有一个名字。\n“周启明？”\n这个名字对你没有任何意义。\n名字下面只有一行更小的字：23:47。",
       "action": "查看名字",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.22, 0.25, 0.27, 0.43]}
+      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.50, 0.46, 0.27, 0.30]}
     },
     {
       "id": "search_prompt",
@@ -90,7 +90,7 @@
       "body": "现在是22:25。\n距离23:47还有一个多小时。\n至少先确认，这是不是一个真实存在的人。",
       "action": "在网络中搜索“周启明”",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.22, 0.25, 0.27, 0.43]}
+      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.50, 0.46, 0.27, 0.30]}
     },
     {
       "id": "search_results",
@@ -212,7 +212,7 @@
       "body": "周启明。23:47。\n名字和时间依旧存在。\n“不可能。”",
       "action": "继续翻页",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.22, 0.25, 0.27, 0.43]}
+      "visual": {"type": "notebook", "text": "周启明\n\n23:47", "size": 25, "rect": [0.50, 0.46, 0.27, 0.30]}
     },
     {
       "id": "blank_page",
@@ -220,7 +220,7 @@
       "body": "第三页是空白的。\n你确定刚才翻过这里。右下角什么都没有。\n然后，一点墨色从纸纤维里渗出来。",
       "action": "别移开视线",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "下一次。", "size": 22, "rect": [0.51, 0.46, 0.25, 0.22]},
+      "visual": {"type": "notebook", "text": "下一次。", "size": 22, "rect": [0.50, 0.46, 0.27, 0.30]},
       "speed": 24
     },
     {
@@ -231,7 +231,7 @@
       "body": "墨迹没有停。\n那句话刚才并不存在。\n你猛地合上笔记。",
       "action": "……",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
-      "visual": {"type": "notebook", "text": "下一次。\n\n由你来写。", "size": 25, "rect": [0.51, 0.40, 0.25, 0.28]},
+      "visual": {"type": "notebook", "text": "下一次。\n\n由你来写。", "size": 25, "rect": [0.50, 0.46, 0.27, 0.30]},
       "speed": 22
     },
     {

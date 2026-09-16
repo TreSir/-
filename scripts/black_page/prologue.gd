@@ -17,6 +17,8 @@ const UI = preload("res://scripts/black_page/ui_style.gd")
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
 ## 逐字显示。主界面那套也是同一个组件——打字机全项目只此一份。
 const Typewriter = preload("res://scripts/core/typewriter.gd")
+## 墨迹渗出。黑页上的字靠它「像墨一样渗出来」，见 assets/shaders/ink_bleed.gdshader。
+const INK_SHADER = preload("res://assets/shaders/ink_bleed.gdshader")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
 const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
@@ -354,6 +356,35 @@ func _show_beat() -> void:
 		_body_scroll.scroll_vertical = 0
 	_hint.text = ""
 
+## 演出卡片的入场：轻轻淡出来。**别做位移**——位置由 _layout_visual 管，
+## 动画去动 position 会和它打架。黑页的调子也要克制，不做弹跳。
+func _fade_in(node: Control, delay := 0.0, dur := 0.45) -> void:
+	node.modulate.a = 0.0
+	var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(node, "modulate:a", 1.0, dur).set_delay(delay)
+
+## 热区的悬停反馈。
+##
+## 序章的热区**平时完全隐形**（靠正文点出可点的东西），但鼠标扫上去必须有回应，
+## 否则玩家不知道自己指到了什么。所以这里只给一圈极淡的青边，
+## 不做房间那套辉光、也不做调试标签——那些不该出现在序章。
+func _decorate_hotspot(box: Control, _item: Dictionary) -> void:
+	box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var ring := Panel.new()
+	ring.name = "Ring"
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ring.add_theme_stylebox_override(
+		"panel", UI.box(Color(0, 0, 0, 0), UI.ACCENT, 1, 6, 0))
+	ring.modulate.a = 0.0
+	box.add_child(ring)
+	box.mouse_entered.connect(func():
+		var t := box.create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		t.tween_property(ring, "modulate:a", 0.5, 0.12))
+	box.mouse_exited.connect(func():
+		var t := box.create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		t.tween_property(ring, "modulate:a", 0.0, 0.2))
+
 ## 清空三层演出。每次翻页先全清，避免上一页的卡片和热区残留。
 func _clear_layers() -> void:
 	for layer in [_visual_layer, _hotspot_layer, _choice_layer]:
@@ -426,14 +457,29 @@ func _render_visual(raw: Variant) -> void:
 		"title": _build_title_card(spec)
 
 ## 黑页上的字：贴在笔记本背景的纸页区域（rect 是 UV）。
+##
+## 用 ink_bleed 着色器让字**像墨一样渗出来**——策划案 §十一 写的是
+## 「一点墨色从纸纤维里渗出来」「墨迹缓慢继续出现」。
+## 淡入是「显示出来」，墨是「沿着纤维蔓开」，两者观感不一样，所以这里值得用 shader。
 func _build_notebook_visual(spec: Dictionary) -> void:
 	var label := UI.label(str(spec.get("text", "")), float(spec.get("size", 20)), Color("1b1b1b"))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.set_meta("uv", spec.get("rect", [0.22, 0.25, 0.27, 0.43]))
+	var material := ShaderMaterial.new()
+	material.shader = INK_SHADER
+	material.set_shader_parameter("progress", 0.0)
+	# 每页换一个纸纹，免得六页的纤维一模一样。
+	material.set_shader_parameter("seed", float(step) * 13.7)
+	label.material = material
 	_visual_layer.add_child(label)
 	_layout_visual()
+	# 墨渗开约 1.8 秒。**别调快**——急了就看不出是墨，变成普通淡入了。
+	var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_method(func(value: float):
+		if is_instance_valid(material): material.set_shader_parameter("progress", value),
+		0.0, 1.0, 1.8)
 
 ## 手机聊天卡：头像 + 名字 + 正文（对白气泡的位置感）。
 func _build_profile_card(spec: Dictionary) -> void:
@@ -462,6 +508,7 @@ func _build_profile_card(spec: Dictionary) -> void:
 	column.add_child(UI.flow(str(spec.get("detail", "")), UI.SIZE_SMALL + 1, Color("dae6ec")))
 	_visual_layer.add_child(panel)
 	_layout_visual()
+	_fade_in(panel, 0.0, 0.5)
 
 ## 新闻 / 网页卡：栏目标签 + 头像 + 标题 + 正文。
 func _build_article_card(spec: Dictionary) -> void:
@@ -498,6 +545,7 @@ func _build_article_card(spec: Dictionary) -> void:
 	column.add_child(row)
 	_visual_layer.add_child(panel)
 	_layout_visual()
+	_fade_in(panel, 0.0, 0.5)
 
 ## 标题卡：整屏居中，不挂底部字幕带。
 func _build_title_card(spec: Dictionary) -> void:
@@ -510,15 +558,39 @@ func _build_title_card(spec: Dictionary) -> void:
 	primary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	center.add_child(primary)
 	var secondary_text := str(spec.get("secondary", ""))
+	var secondary: Label = null
 	if not secondary_text.is_empty():
-		var secondary := UI.label(secondary_text, float(spec.get("secondary_size", 28)), UI.TEXT_DIM)
+		secondary = UI.label(secondary_text, float(spec.get("secondary_size", 28)), UI.TEXT_DIM)
 		secondary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		center.add_child(secondary)
 	_visual_layer.add_child(center)
+	_intro_title(center, primary, secondary)
+
+## 标题卡的入场：**先浮出来，再慢慢放大一点点**。
+##
+## 策划案 §十二 写的是「一滴黑色墨水落下。墨迹慢慢扩散。形成标题」，
+## 那种水墨扩散用代码做不像，但「缓慢浮出 + 极轻地放大」能拿到同一个"沉下去"的观感。
+##
+## 放大要等一帧拿到实际尺寸才设轴心，否则会从左上角往外涨。
+func _intro_title(center: Control, primary: Label, secondary: Label) -> void:
+	center.modulate.a = 0.0
+	var appear := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	appear.tween_property(center, "modulate:a", 1.0, 1.5)
+	await get_tree().process_frame
+	if not is_instance_valid(primary) or not is_instance_valid(center): return
+	if secondary != null and is_instance_valid(secondary):
+		secondary.modulate.a = 0.0
+		var sub := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		sub.tween_property(secondary, "modulate:a", 1.0, 1.2).set_delay(0.9)
+	primary.pivot_offset = primary.size * 0.5
+	primary.scale = Vector2(0.93, 0.93)
+	var grow := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	grow.tween_property(primary, "scale", Vector2.ONE, 2.2)
 
 ## 轻量分支：按钮竖排。点选后把 response 当作正文播出来，并写入自己的 set。
 func _render_choices(raw: Variant) -> void:
 	if not (raw is Array) or raw.is_empty(): return
+	var index := 0
 	for item in raw:
 		if not (item is Dictionary): continue
 		var choice: Dictionary = item
@@ -530,6 +602,8 @@ func _render_choices(raw: Variant) -> void:
 			_clear_layers()
 			_show_response(str(choice.get("response", ""))))
 		_choice_layer.add_child(button)
+		_fade_in(button, 0.07 * index, 0.35)
+		index += 1
 	_layout_choices()
 
 ## 第一人称热区：`rect` 是 UV 比例，点一下把 `response` 播成正文。
@@ -541,7 +615,7 @@ func _render_hotspots(raw: Variant) -> void:
 	_hotspot_layer.setup(raw, Vector2(texture.get_width(), texture.get_height()),
 		func(item: Dictionary):
 			_clear_layers()
-			_show_response(str(item.get("response", ""))))
+			_show_response(str(item.get("response", ""))), _decorate_hotspot)
 
 ## 把一个「回应」当成新的一段正文播出来——热区和选项共用这条路径。
 func _show_response(text: String) -> void:
