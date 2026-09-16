@@ -12,7 +12,6 @@ const INK := Color(0.0196, 0.0314, 0.0431, 1.0)
 const VEIL := Color(0.0118, 0.0275, 0.0431, 0.52)
 const PANEL_BG := Color(0.0314, 0.0588, 0.0824, 0.90)
 const PANEL_SOFT := Color(0.0706, 0.1176, 0.1490, 0.66)
-const PANEL_DEEP := Color(0.0275, 0.0471, 0.0627, 0.82)
 
 const HAIR := Color(0.4941, 0.6980, 0.7686, 0.16)
 const HAIR_STRONG := Color(0.4941, 0.6980, 0.7686, 0.34)
@@ -23,12 +22,10 @@ const TEXT_DIM := Color("7d909c")
 const TEXT_MUTE := Color("566872")
 
 const ACCENT := Color("62c2dd")
-const ACCENT_DIM := Color("5c8797")
 const ACCENT_SOFT := Color(0.3843, 0.7608, 0.8667, 0.14)
 const ACCENT_EDGE := Color(0.3843, 0.7608, 0.8667, 0.42)
 
 const AMBER := Color("e0a45e")
-const AMBER_SOFT := Color(0.8784, 0.6431, 0.3686, 0.13)
 const AMBER_EDGE := Color(0.8784, 0.6431, 0.3686, 0.40)
 
 const ACT_BG := Color(0.0784, 0.1412, 0.1804, 0.62)
@@ -53,9 +50,6 @@ const TOPBAR_H := 58
 const RAIL_W := 84
 const MARGIN_L := 111
 const MARGIN_R := 111
-const MARGIN_T := 84
-const GAP := 20
-const SIDE_W := 284
 const ACT_H := 53
 const BTN_H := 46
 ## 底部对话框的固定高度（逻辑像素）。
