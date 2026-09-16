@@ -137,13 +137,24 @@ func _ui() -> void:
 	ui._start_new_game()
 	await get_tree().create_timer(0.6).timeout
 	check(is_instance_valid(ui.prologue) and not ui.shell.visible, "opening prologue gates investigation hub")
-	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED
-	ui.prologue.step = 3
+	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED。
+	# 新剧本里 index=14（wait_2332）配了 speed 34。
+	ui.prologue.step = 14
 	ui.prologue._render_page()
-	check(ui.prologue._speed == 26.0, "page speed overrides the global typing speed")
+	check(ui.prologue._speed == 34.0, "page speed overrides the global typing speed")
 	ui.prologue.step = 0
 	ui.prologue._render_page()
 	check(ui.prologue._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
+	# 演出组件要真的建出来：index=1 是出租屋那一页，挂了 5 个热点
+	ui.prologue.step = 1
+	ui.prologue._render_page()
+	check(ui.prologue._hotspot_layer.get_child_count() == 5, "hotspot page builds its hotspots")
+	# index=3 是许妍那页，挂了 3 个回复选项
+	ui.prologue.step = 3
+	ui.prologue._render_page()
+	check(ui.prologue._choice_layer.get_child_count() == 3, "choice page builds its options")
+	ui.prologue.step = 0
+	ui.prologue._render_page()
 	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态
 	ui.prologue._auto = true
 	ui.prologue._refresh_auto()
@@ -155,13 +166,20 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_prologue.png")
-	for _step in 5: ui.prologue._advance()
+	# 把整段序章走完：32 页，逐页推进到序章自己被释放。
+	# `_advance()` 是「无条件翻页」，和玩家点击走的 `_tap()` 不是一层。
+	var prologue_guard := 0
+	while is_instance_valid(ui.prologue) and prologue_guard < 40:
+		ui.prologue._advance()
+		await get_tree().process_frame
+		prologue_guard += 1
+	check(prologue_guard >= 32, "every prologue page was walked (%d)" % prologue_guard)
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.1).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_chapter.png")
-	await get_tree().create_timer(1.8).timeout
-	check(not is_instance_valid(ui.prologue) and ui.shell.visible and ui.game.flag("prologue.completed"), "first writing sequence reveals title and hub")
+	await get_tree().create_timer(1.6).timeout
+	check(not is_instance_valid(ui.prologue) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
@@ -173,19 +191,14 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_menu.png")
 	ui._close_menu()
-	# 左侧栏是常驻的四个系统功能，点开各自的面板。
+	# 左侧栏不是开局全给的：序章最后一页只解锁「人物」和「口袋」，
+	# 「案件」要碰房间里的显示器、「黑页」要碰桌上那本笔记。
 	# 这类问题来自「全屏容器默认 MOUSE_FILTER_STOP 盖在上面吃点击」，
 	# 直接调方法测不出来，必须模拟真实鼠标点击。
-	# 开局：四个入口**全部锁着**，要把开场那段（手机震动 → 消息 → 自言自语）点完才出现
-	await get_tree().create_timer(1.0).timeout
-	check(not ui.nav_buttons["case"].visible, "no rail icons before the opening plays")
-	var opening_guard := 0
-	while not ui.nav_buttons["case"].visible and opening_guard < 30:
-		_click_at(ui, Vector2(200, 200))
-		await get_tree().create_timer(0.12).timeout
-		opening_guard += 1
-	check(ui.nav_buttons["case"].visible, "case icon unlocks after the opening")
-	await get_tree().create_timer(1.2).timeout
+	await get_tree().process_frame
+	check(ui.nav_buttons["people"].visible and ui.nav_buttons["pocket"].visible, "people and pocket unlock from prologue data")
+	check(not ui.nav_buttons["case"].visible and not ui.nav_buttons["notebook"].visible, "case and notebook stay hidden until touched")
+	await get_tree().create_timer(0.6).timeout
 
 	_click_at(ui, ui.nav_buttons["people"].get_global_rect().get_center())
 	await get_tree().process_frame
@@ -200,8 +213,9 @@ func _ui() -> void:
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_people.png")
-	# 案件面板里挂着调查方向
-	ui._open_case()
+	# 碰房间里的显示器：点亮「案件」入口（带解锁动画）并打开案件面板
+	ui._hotspot_pressed({"target": "monitor"})
+	check(ui.game.flag("ui.case") and ui.nav_buttons["case"].visible and ui.nav_buttons["case"].modulate.a < 1.0, "monitor reveals the case nav with animation")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(ui.modal.visible and ui._open_panel == "case", "case panel opens")
@@ -222,9 +236,10 @@ func _ui() -> void:
 	await get_tree().create_timer(1.0).timeout
 	check(ui.scene_id == "room", "top bar breadcrumb responds to a real click")
 
-	# 黑页面板会把场景切走
-	ui._open_notebook()
-	await get_tree().create_timer(0.1).timeout
+	# 碰桌上那本笔记：点亮「黑页」入口，并把场景切走
+	ui._hotspot_pressed({"target": "notebook"})
+	check(ui.game.flag("ui.notebook") and ui.nav_buttons["notebook"].visible and ui.nav_buttons["notebook"].modulate.a < 1.0, "desk notebook reveals the notebook nav with animation")
+	await get_tree().create_timer(0.3).timeout
 	check(ui.scene_id == "notebook", "opening the notebook switches the scene")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw

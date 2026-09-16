@@ -654,14 +654,38 @@ func _layout_hotspots() -> void:
 
 ## 热区触发。锚点只负责「打开什么」，内容一律复用侧栏那套入口，
 ## 这样热区和侧栏永远不会走出两套不同的状态。
+## 热区触发。锚点只负责「打开什么」，内容一律复用侧栏那套入口，
+## 这样热区和侧栏永远不会走出两套不同的状态。
+##
+## 第一次碰某个实体时顺带把对应侧栏入口点亮——功能跟着探索长出来，不是开局全给。
 func _hotspot_pressed(uv: Dictionary) -> void:
 	match str(uv.get("target", "")):
-		"notebook": _open_notebook()
-		"monitor": _open_case()
+		"notebook":
+			_unlock_nav("notebook")
+			_open_notebook()
+		"monitor":
+			_unlock_nav("case")
+			_open_case()
 		"phone": _open_pocket()
 		"clues": _open_clues()
 		"people": _open_people()
 		_: _open_case()
+
+## 点亮一个侧栏入口，并做一个淡入的解锁动画（玩家能感觉到「这里多了一个入口」）。
+## 已经亮着就直接返回，重复点同一个热区不会重放动画。
+func _unlock_nav(key: String) -> void:
+	if bool(game.flag("ui." + key)):
+		return
+	var error: String = game.reveal_ui([key])
+	if not error.is_empty():
+		push_warning("解锁侧栏入口失败：%s" % error)
+		return
+	var button: Button = nav_buttons.get(key)
+	if button == null:
+		return
+	button.modulate.a = 0.0
+	var tween := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(button, "modulate:a", 1.0, 0.45)
 
 ## 取这次转场的配置。优先级：**单条行动 > 目标场景 > 全局默认**。
 ## 都缺的时候给一份内置的兜底，保证转场不会因为配置写错就卡住。
