@@ -65,11 +65,7 @@
       "archive"
     ],
     "text": "林墨把查询结果转了过来。\n“不是没查到。是八年前，突然多出来这个人。”\n你又看了一眼员工证。它现在只能证明有人在使用这个名字。",
-    "effects": {
-      "add": {
-        "linmo_trust": 5
-      }
-    }
+    "effects": {}
   },
   "photo": {
     "name": "查阅晨曦福利院合照",
@@ -182,6 +178,9 @@
     "effects": {
       "add": {
         "linmo_trust": 15
+      },
+      "set": {
+        "person.linmo.discovered": true
       }
     }
   },

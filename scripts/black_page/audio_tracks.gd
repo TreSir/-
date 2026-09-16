@@ -7,10 +7,14 @@ extends RefCounted
 ##
 ## ★ 想换默认曲目，只改下面这三行常量就行，其它地方不用动。
 
-## 细雨。rain_ambience 现在的默认轨（比 RAIN_DEFAULT 干净，见该文件顶部注释）。
+## 雨 + 远处闷雷。**当前的默认雨声**——用户听过几种之后挑中的。
+const RAIN_THUNDER := "res://assets/audio/rain_thunder.ogg"
+
+## 细雨。更安静的备选。
 const RAIN_LIGHT := "res://assets/audio/rain_light.ogg"
 
-## 启动页默认雨声。
+## 最早的默认轨。素材原始是「School day / Rain」= **雨天的学校**，
+## 录音里带环境声和低频轰鸣，不适合「深夜出租屋」，所以换掉了。
 const RAIN_DEFAULT := "res://assets/audio/rain_steady.ogg"
 ## 启动页背景音乐。
 const MUSIC_MENU := "res://assets/audio/bgm_contemplation.ogg"

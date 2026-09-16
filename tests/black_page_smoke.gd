@@ -96,10 +96,14 @@ func _run() -> void:
 	act("notebook")
 	check(game.finish_case("seal").is_empty() and game.flag("ending") == "secret", "priority hidden ending")
 	game.new_game()
+	# 陈东要**查过公交站监控才认识**（discovered 默认 false），所以先走 camera
+	act("camera")
 	check(game.write_name("zhou").is_empty(), "unconfirmed writing allowed")
 	game.end_day()
 	check(game.flag("wrong_writes") == 1 and game.person_flag("zhou", "status") != "dead", "wrong identity fails softly")
 	game.new_game()
+	# 林墨同理：向林墨交代过来源才认识（cooperate 会写 discovered）
+	act("cooperate")
 	game.write_name("linmo")
 	game.end_day()
 	act("camera")

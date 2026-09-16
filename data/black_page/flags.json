@@ -124,7 +124,7 @@
   },
   "person.zhou.discovered": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "person.xu.identity": {
     "type": "int",
@@ -184,7 +184,7 @@
   },
   "person.linmo.discovered": {
     "type": "bool",
-    "default": true
+    "default": false
   },
   "case.missing.status": {
     "type": "string",
