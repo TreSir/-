@@ -263,9 +263,6 @@ static func chip(text: String, color: Color = TEXT_DIM, soft: Color = Color(0, 0
 static func accent_chip(text: String) -> Label:
 	return chip(text, ACCENT, ACCENT_SOFT, ACCENT_EDGE)
 
-static func amber_chip(text: String) -> Label:
-	return chip(text, AMBER, AMBER_SOFT, AMBER_EDGE)
-
 static func primary_button(text: String, size: int = SIZE_UI) -> Button:
 	var button := Button.new()
 	button.text = text
@@ -334,52 +331,6 @@ static func action_row(title: String, cost: String, enabled: bool = true) -> But
 	var cost_label := label(cost, SIZE_MICRO, AMBER if enabled else TEXT_MUTE)
 	cost_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(cost_label)
-	button.add_child(row)
-	return button
-
-## 中央选项：VN 的选项是「浮在画面上」的，所以同样不给底色，
-## 只用左侧一条色条 + 悬停高亮来表达可点性。
-static func choice_button(text: String, note: String = "", enabled: bool = true) -> Button:
-	var button := Button.new()
-	button.text = ""
-	button.custom_minimum_size.y = 52
-	button.disabled = not enabled
-	var rest := Color(0, 0, 0, 0)
-	var idle := box(rest, Color(0, 0, 0, 0), 0, 0, 0)
-	idle.border_width_left = 2
-	idle.content_margin_left = 24
-	idle.content_margin_right = 12
-	var hot := box(Color(0.3843, 0.7608, 0.8667, 0.14), ACCENT, 0, 0, 0)
-	hot.border_width_left = 2
-	hot.content_margin_left = 24
-	hot.content_margin_right = 12
-	var down := box(Color(0.3843, 0.7608, 0.8667, 0.22), ACCENT, 0, 0, 0)
-	down.border_width_left = 2
-	down.content_margin_left = 24
-	down.content_margin_right = 12
-	button.add_theme_stylebox_override("normal", idle)
-	button.add_theme_stylebox_override("hover", hot)
-	button.add_theme_stylebox_override("pressed", down)
-	button.add_theme_stylebox_override("focus", box(rest, rest, 0, 0, 0))
-	var dead := box(rest, Color(0, 0, 0, 0), 0, 0, 0)
-	dead.border_width_left = 2
-	dead.content_margin_left = 24
-	dead.content_margin_right = 12
-	button.add_theme_stylebox_override("disabled", dead)
-
-	var row := HBoxContainer.new()
-	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	row.offset_left = 22
-	row.offset_right = -14
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var name_label := label(text, SIZE_BODY, TEXT if enabled else TEXT_MUTE)
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(name_label)
-	if not note.is_empty():
-		var note_label := label(note, SIZE_MICRO, AMBER if enabled else TEXT_MUTE)
-		note_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(note_label)
 	button.add_child(row)
 	return button
 
