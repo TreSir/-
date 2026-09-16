@@ -57,7 +57,7 @@
       "action": "查看包裹",
       "background": "res://assets/backgrounds/black_page_prologue_door_package_v1.png",
       "hotspots": [
-        {"label": "黑色包裹", "rect": [0.43, 0.68, 0.14, 0.09], "response": "“什么时候放在这的？”\n楼道里没有脚步声。你把它拿进房间。", "advance": true}
+        {"label": "黑色包裹", "rect": [0.43, 0.700, 0.14, 0.100], "response": "“什么时候放在这的？”\n楼道里没有脚步声。你把它拿进房间。", "advance": true}
       ]
     },
     {
