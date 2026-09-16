@@ -154,7 +154,7 @@ func _ui() -> void:
 	var ui = load("res://scenes/black_page/main.tscn").instantiate()
 	add_child(ui)
 	await get_tree().process_frame
-	check(is_instance_valid(ui.launch) and not ui.shell.visible, "launch page gates game")
+	check(is_instance_valid(ui.launch) and not ui._hud_layer.visible, "launch page gates game")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(2.9).timeout
 		await RenderingServer.frame_post_draw
@@ -162,7 +162,14 @@ func _ui() -> void:
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_launch.png")
 	ui._start_new_game()
 	await get_tree().create_timer(0.6).timeout
-	check(is_instance_valid(ui.prologue) and not ui.shell.visible, "opening prologue gates investigation hub")
+	check(is_instance_valid(ui.prologue) and not ui._hud_layer.visible, "opening prologue gates investigation hub")
+	# HUD 的成员**必须都挂在 _hud_layer 下**：显隐是一刀切的（只切这一个节点），
+	# 挂在别处就不会跟着收——顶栏以前就是这么在序章里一直露着日期和行动点的。
+	# 这条断言守的是**结构**，不是某个节点的 visible 值。
+	check(ui.shell.get_parent() == ui._hud_layer
+			and ui._topbar.get_parent() == ui._hud_layer
+			and ui._rail.get_parent() == ui._hud_layer,
+		"every hud member lives under the hud layer")
 	# 序章的音乐是「若有若无，然后消失」：页面声明要求，播放器由 main 注入。
 	# 音频在 headless 下听不到，但「有没有递进去」能验。
 	check(is_instance_valid(ui.prologue.music), "prologue gets the music player injected")

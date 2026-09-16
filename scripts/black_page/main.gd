@@ -44,9 +44,11 @@ const MAX_FREE_ACTIONS := 3
 var game = Investigation.new()
 var scene_id := Scenes.ROOM
 var shell: Control
+## HUD 的共同父节点。顶栏／左侧栏／字幕带都挂在它下面，
+## 于是“收起 HUD”就是切这一个节点——**不需要逐个列举**。
+var _hud_layer: Control
 ## 顶栏（黑页／房间 · 第N天 · 剩余行动）。
-## 注意它**不是 shell 的子节点**：_build_topbar 直接挂在主节点上，
-## 所以 _reveal_hud 必须单独管它，否则序章演出时它会一直露着。
+## 留这个引用只为让测试能断言它**确实挂在 hud 层里**（漏挂就会漏收）。
 var _topbar: Control
 var header: Label
 var notice: Label
@@ -142,6 +144,15 @@ func _build() -> void:
 
 	_build_hotspots()
 
+	# HUD 层：**所有游戏内界面元素的共同父节点**——顶栏、左侧栏、底部字幕带。
+	# 显隐是一刀切的（_reveal_hud 只切这一个节点），所以属于 HUD 的东西
+	# **必须挂进来**，不能挂在主节点上——顶栏以前就是这么漏出来的。
+	_hud_layer = Control.new()
+	_hud_layer.name = "HudLayer"
+	_hud_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hud_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_hud_layer)
+
 	_build_topbar()
 	_build_rail()
 	_build_speaker()
@@ -167,7 +178,7 @@ func _build_rail() -> void:
 	_rail.offset_top = UI.TOPBAR_H
 	_rail.offset_bottom = -18
 	_rail.custom_minimum_size.x = UI.RAIL_W
-	add_child(_rail)
+	_hud_layer.add_child(_rail)
 
 	var entries := [
 		["案件", "case", func(): _open_case()],
@@ -201,7 +212,7 @@ func _build_topbar() -> void:
 	row.offset_right = -30
 	row.offset_top = (UI.TOPBAR_H - 28) * 0.5
 	row.offset_bottom = row.offset_top + 28
-	add_child(row)
+	_hud_layer.add_child(row)
 	_topbar = row
 
 	var logo := Button.new()
@@ -301,7 +312,7 @@ func _speaker_of(line: String) -> String:
 ## 正文从固定高度起排、往下长；超出框高之后用滚轮往下看，框本身纹丝不动。
 func _build_shell() -> void:
 	shell = UI.dialogue_box()
-	add_child(shell)
+	_hud_layer.add_child(shell)
 	shell.add_child(UI.dialogue_scrim())
 
 	var margin := MarginContainer.new()
@@ -828,10 +839,10 @@ func _show_prologue() -> void:
 
 ## 左侧栏和底部字幕带是同一条命：剧情演出时整条 HUD 一起收起。
 func _reveal_hud(visible_now: bool) -> void:
-	shell.visible = visible_now
-	_rail.visible = visible_now
-	# 顶栏是单独挂的（不是 shell 的子节点），漏了它序章里就会一直露着日期和行动点。
-	if _topbar != null: _topbar.visible = visible_now
+	# 一刀切：HUD 的成员都挂在 _hud_layer 下，切它一个就够了。
+	# 以前是逐个列举 shell / rail / topbar——**漏一个就漏一片**，
+	# 顶栏就是这么在序章里一直露着日期和行动点的。
+	_hud_layer.visible = visible_now
 	# 热区跟着 HUD 一起收：序章演出时点背景不该有反应。
 	if _hotspot_layer != null: _hotspot_layer.visible = visible_now
 	# HUD 刚露出来时，侧栏条目要按当前进度重算一次，否则会带着上次的显示状态。
