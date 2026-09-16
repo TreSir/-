@@ -34,6 +34,9 @@ var source: Array = []
 
 ## main.gd 注入的调查模块。**序章写状态必须经它**——不越过游戏模块直接改底层状态。
 var game: Node
+## main.gd 注入的音乐播放器。序章的音乐是「若有若无，然后消失」（策划案 §九），
+## 所以页面可以自己声明对音乐的要求，见 。
+var music: Node
 
 func _load_pages() -> Array:
 	if source.is_empty():
@@ -306,6 +309,7 @@ func _render_page() -> void:
 	_show_beat()
 
 	_apply_backdrop(str(entry.background))
+	_apply_page_music(entry.get("music", {}))
 	_clear_layers()
 	_render_visual(entry.get("visual", {}))
 	_render_hotspots(entry.get("hotspots", []))
@@ -354,6 +358,25 @@ func _clear_layers() -> void:
 		for child in layer.get_children():
 			layer.remove_child(child)
 			child.queue_free()
+
+## 应用这一页声明的音乐要求。
+##
+## 序章的音乐是「若有若无，然后消失」——策划案 §九 的原话是
+## 「房间里**原本若有若无的音乐**已经停了」，所以它归数据管，不写死在代码里：
+##
+##   {"play": "res://assets/audio/x.ogg", "db": -26.0, "fade": 5.0}   放（db 越低越若有若无）
+##   {"stop": true, "fade": 4.0}                                     淡出停掉
+func _apply_page_music(spec: Variant) -> void:
+	if music == null or not (spec is Dictionary): return
+	var changes: Dictionary = spec
+	if changes.is_empty(): return
+	var fade := float(changes.get("fade", 3.0))
+	if bool(changes.get("stop", false)):
+		music.fade_out(fade)
+		return
+	var track := str(changes.get("play", ""))
+	if track.is_empty(): return
+	music.play_track(track, fade, float(changes.get("db", -20.0)))
 
 ## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载；旧写法 door / note 兜底。
 func _apply_backdrop(value: String) -> void:

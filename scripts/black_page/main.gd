@@ -806,6 +806,8 @@ func _show_prologue() -> void:
 	# 界面只管把这两个依赖递进去，自己不碰数据。
 	prologue.source = game.bundle.get("prologue", [])
 	prologue.game = game
+	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
+	prologue.music = music
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())

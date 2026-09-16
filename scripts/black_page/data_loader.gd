@@ -128,6 +128,7 @@ func _rules(group: String, pointer: String, row: Dictionary, bundle: Dictionary)
 const PROLOGUE_FIELDS := {
 	"id": true, "title": true, "body": true, "action": true, "background": true,
 	"visual": true, "choices": true, "hotspots": true, "set": true, "speed": true,
+	"music": true,
 	"bg": true,
 }
 const PROLOGUE_VISUALS := ["notebook", "profile", "article", "title"]
@@ -147,6 +148,8 @@ func _compile_prologue(raw: Variant) -> Array:
 			return []
 		var page: Dictionary = entry
 		for key in page:
+			# `#` 开头的键当注释用（JSON 不支持注释），不算未知字段。
+			if str(key).begins_with("#"): continue
 			if not PROLOGUE_FIELDS.has(str(key)):
 				push_warning("prologue.json /pages/%d 有未知字段「%s」，会被忽略" % [index, key])
 		var visual: Variant = page.get("visual", {})
