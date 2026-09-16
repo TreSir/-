@@ -798,7 +798,8 @@ func _continue_game() -> void:
 		_message(error)
 		return
 	# 存档停在序章里的话，同样不能放音乐——序章是雨声的段落。
-	var in_prologue := not game.flag("prologue.completed")
+	# 注意 flag() 返回 Variant，这里必须显式声明类型，不能让 := 去推。
+	var in_prologue: bool = not bool(game.flag("prologue.completed"))
 	if in_prologue:
 		_show_prologue()
 	else:
