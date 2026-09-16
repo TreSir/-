@@ -170,10 +170,21 @@ func _ui() -> void:
 	ui.prologue._auto = false
 	ui.prologue._refresh_auto()
 	check(ui.prologue._auto_link.text == "自动", "auto mode reverts the button label")
+	# 截图模式：序章几种演出各拍一张，方便肉眼验收
+	# （房间热点 / 聊天卡 / 纸页写字 / 新闻卡 / 标题卡）。
+	# 每张等一小会儿让打字机推进，拍到的才是真实画面。
 	if "--capture-render" in OS.get_cmdline_user_args():
-		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
-		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_prologue.png")
+		for shot in [[1, "prologue_room"], [3, "prologue_chat"], [7, "prologue_rules"],
+				[10, "prologue_article"], [25, "prologue_title"]]:
+			ui.prologue.step = shot[0]
+			ui.prologue._render_page()
+			await get_tree().create_timer(0.9).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(
+				"user://screenshots/black_page_%s.png" % shot[1])
+		ui.prologue.step = 0
+		ui.prologue._render_page()
 	# 把整段序章走完：32 页，逐页推进到序章自己被释放。
 	# `_advance()` 是「无条件翻页」，和玩家点击走的 `_tap()` 不是一层。
 	var prologue_guard := 0

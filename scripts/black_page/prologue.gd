@@ -537,8 +537,14 @@ func _layout_visual() -> void:
 			if (uv is Array) and (uv as Array).size() >= 4:
 				var rect := _uv_to_rect(uv, view)
 				box.position = rect.position
-				box.custom_minimum_size = rect.size
-				box.size = rect.size
+				if box is PanelContainer:
+					# 面板类卡片：宽度按 UV 定，**高度跟着内容走**。
+					# 硬套 UV 高度会剩一大块空白（新闻卡尤其明显）。
+					box.custom_minimum_size = Vector2(rect.size.x, 0.0)
+					box.size = Vector2(rect.size.x, box.get_combined_minimum_size().y)
+				else:
+					box.custom_minimum_size = rect.size
+					box.size = rect.size
 			# 笔记本上的字按字号缩放，和界面其它部分保持一致。
 			if box is Label:
 				(box as Label).add_theme_font_size_override("font_size",
