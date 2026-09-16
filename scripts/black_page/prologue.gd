@@ -17,6 +17,8 @@ const UI = preload("res://scripts/black_page/ui_style.gd")
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
 ## 逐字显示。主界面那套也是同一个组件——打字机全项目只此一份。
 const Typewriter = preload("res://scripts/core/typewriter.gd")
+## 进度条宽度。**写死**：跟着页数涨的话，32 页就会横贯整屏。
+const PROGRESS_W := 132.0
 ## 墨迹渗出。黑页上的字靠它「像墨一样渗出来」，见 assets/shaders/ink_bleed.gdshader。
 const INK_SHADER = preload("res://assets/shaders/ink_bleed.gdshader")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
@@ -103,7 +105,11 @@ var _backdrop: TextureRect
 var _catcher: Button
 var _body_scroll: ScrollContainer
 var _top: HBoxContainer
-var _dots: HBoxContainer
+## 进度：**一条定宽细线**，不是「一页一个小点」。
+##
+## 小点写法在 5 页的序章里刚好，32 页就变成横贯整屏的虚线了——
+## 页数一多，小点既占地方又读不出信息（32 个小点谁也数不清）。
+var _progress_fill: ColorRect
 var _hint: Label
 var _auto := false
 var _auto_clock := 0.0
@@ -210,16 +216,25 @@ func _build() -> void:
 	head_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(head_spacer)
-	_dots = HBoxContainer.new()
-	_dots.add_theme_constant_override("separation", 6)
-	_dots.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for _index in pages.size():
-		var pip := ColorRect.new()
-		pip.custom_minimum_size = Vector2(26, 3)
-		pip.color = Color(0.4941, 0.6980, 0.7686, 0.20)
-		_dots.add_child(pip)
-	head.add_child(_dots)
+	# 进度：一条定宽细线（走过的部分亮起来）。定宽是关键——
+	# 宽度不能跟着页数涨，否则 32 页就会横贯整屏。
+	var bar := Control.new()
+	bar.name = "Progress"
+	bar.custom_minimum_size = Vector2(PROGRESS_W, 3)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var track := ColorRect.new()
+	track.color = Color(0.4941, 0.6980, 0.7686, 0.16)
+	track.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(track)
+	_progress_fill = ColorRect.new()
+	_progress_fill.color = UI.ACCENT
+	_progress_fill.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+	_progress_fill.offset_right = 0.0
+	_progress_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(_progress_fill)
+	head.add_child(bar)
 	column.add_child(head)
 
 	column.add_child(UI.spacer(16))
@@ -324,9 +339,10 @@ func _render_page() -> void:
 	var is_title := str((entry.get("visual", {}) as Dictionary).get("type", "")) == "title"
 	card.visible = not is_title
 
-	for index in _dots.get_child_count():
-		var pip := _dots.get_child(index) as ColorRect
-		pip.color = UI.ACCENT if index <= step else Color(0.4941, 0.6980, 0.7686, 0.20)
+	# 进度条：走过多少页就亮多少。定宽，不跟着页数涨。
+	if _progress_fill != null:
+		var ratio := float(step + 1) / float(maxi(pages.size(), 1))
+		_progress_fill.offset_right = PROGRESS_W * ratio
 	_auto_clock = 0.0
 	if _card_tween != null and _card_tween.is_valid():
 		_card_tween.kill()
@@ -654,9 +670,11 @@ func _layout_visual() -> void:
 				box.position = rect.position
 				if box is PanelContainer:
 					# 面板类卡片：宽度按 UV 定，**高度跟着内容走**。
-					# 硬套 UV 高度会剩一大块空白（新闻卡尤其明显）。
+					# 但高度**必须等一帧再量**——宽度还没生效时，里面的自动换行标签
+					# 会按「宽度 0」去换行，报出一个巨大的最小高度，把面板撑成一个大黑框。
 					box.custom_minimum_size = Vector2(rect.size.x, 0.0)
-					box.size = Vector2(rect.size.x, box.get_combined_minimum_size().y)
+					box.size = Vector2(rect.size.x, 0.0)
+					_fit_panel_height.call_deferred(box)
 				else:
 					box.custom_minimum_size = rect.size
 					box.size = rect.size
@@ -666,6 +684,16 @@ func _layout_visual() -> void:
 					int(float(box.get_meta("size", 20)) * scale))
 		elif box is PanelContainer:
 			box.size = box.get_combined_minimum_size()
+
+## 等宽度生效之后，把面板高度收到内容高度。
+##
+## 为什么不能当场量：PanelContainer 里的标签是自动换行的，宽度还没应用时
+## 它们按「宽 0」换行，最小高度会算成一个荒谬的大值，当场用就会把面板撑成黑框。
+func _fit_panel_height(box: Control) -> void:
+	if not is_instance_valid(box): return
+	await get_tree().process_frame
+	if not is_instance_valid(box): return
+	box.size.y = box.get_combined_minimum_size().y
 
 func _is_last_beat() -> bool:
 	return _beat >= _beats.size() - 1
