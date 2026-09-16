@@ -66,6 +66,36 @@
     "type": "bool",
     "default": false
   },
+  "prologue.reply": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "have_time",
+      "come_over",
+      "tomorrow"
+    ]
+  },
+  "prologue.xu_is_ex": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.package_received": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.black_page_real": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.zhou_qiming_dead": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.xu_unreachable": {
+    "type": "bool",
+    "default": false
+  },
   "person.zhou.identity": {
     "type": "int",
     "default": 20,
