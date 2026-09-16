@@ -5,6 +5,10 @@ const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
 var failures := 0
+## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
+## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
+## 加断言或删断言后，这个数要跟着改。
+const UI_CHECK_FLOOR := 80
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -121,6 +125,10 @@ func _run() -> void:
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")
 	await _ui()
+	# 检查数本身就是一道门槛。
+	# 有解析错误时，后面的 check 会静默地不执行，而 PASS/FAIL 只看 failures ——
+	# 于是出现「PASS (53 checks)」这种假通过。所以把「跑满」也断言掉。
+	check(checks >= UI_CHECK_FLOOR, "the whole suite ran (%d checks, floor %d)" % [checks, UI_CHECK_FLOOR])
 	print("BLACK_PAGE: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	get_tree().quit(0 if failures == 0 else 1)
 
