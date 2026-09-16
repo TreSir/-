@@ -3,7 +3,7 @@
     {
       "id": "rain_and_key",
       "title": "10月17日 ／ 22:16",
-      "body": "先听见雨声。很轻，没有音乐。\n几秒以后，钥匙插入门锁。\n你把门在身后关上，潮湿的城市被隔在外面。",
+      "body": "你把门在身后关上，潮湿的城市被隔在外面。\n屋子里没有开灯，雨声反而更清楚了。",
       "action": "开灯",
       "background": "black"
     },
@@ -155,7 +155,7 @@
     {
       "id": "countdown_2346",
       "title": "23:46",
-      "body": "没有音乐。\n雨点落在玻璃上。\n时钟走过最后一分钟。",
+      "body": "雨点落在玻璃上，别的什么都听不见。\n时钟走过最后一分钟。",
       "action": "23:47",
       "background": "res://assets/backgrounds/black_page_room_v1.png",
       "speed": 24
@@ -220,7 +220,7 @@
     {
       "id": "next_you_write",
       "title": "黑页",
-      "body": "墨迹没有停。\n那句话刚才并不存在。\n你猛地合上笔记。\n画面陷入黑暗，雨声也在同一刻停了。",
+      "body": "墨迹没有停。\n那句话刚才并不存在。\n你猛地合上笔记。",
       "action": "……",
       "background": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
       "visual": {"type": "notebook", "text": "下一次。\n\n由你来写。", "size": 25, "rect": [0.51, 0.40, 0.25, 0.28]},
