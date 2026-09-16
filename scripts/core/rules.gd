@@ -1,5 +1,5 @@
 extends RefCounted
-## Pure typed flag rules, shared by compiler, runtime, console and save loader.
+## 纯函数式的旗标规则求值。data_loader / investigation / game_state 共用同一套，不重复实现。
 static func number(value: Variant) -> bool:
 	return value is int or value is float
 

@@ -1,5 +1,5 @@
 extends Control
-## Subclass this script; emit finish({...}) once. The host owns cleanup.
+## 小游戏基类。子类自己 emit 一次 finish({...})；弹层与清理由宿主负责。
 signal completed(result: Dictionary)
 
 var _finished := false

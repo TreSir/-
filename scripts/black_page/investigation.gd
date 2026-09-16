@@ -1,5 +1,5 @@
 extends Node
-## Investigation orchestration; GameState remains the sole typed-state owner.
+## 调查编排。GameState 仍是强类型状态的唯一持有者——本模块是唯一允许写它的地方。
 signal changed
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Rules = preload("res://scripts/core/rules.gd")

@@ -1,5 +1,5 @@
 extends RefCounted
-## JSON frontend source map. JSON validates syntax; this walker maps values to lines.
+## JSON 前端 + source map：JSON 管语法，这里把每个值映射回行号，好报「哪个文件哪一行错了」。
 var data: Variant
 var locations: Dictionary = {}
 var error := ""

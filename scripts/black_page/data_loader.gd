@@ -1,5 +1,5 @@
 extends RefCounted
-## Compile investigation content onto the existing typed flags / inventory rules.
+## 把 data/black_page/*.json 编译成 bundle：字段校验 + 跨文件引用检查 + 规范化。
 const Source = preload("res://scripts/core/json_source.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 var sources: Dictionary = {}

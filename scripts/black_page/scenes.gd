@@ -12,7 +12,6 @@ const MONITOR := "monitor"
 const ARCHIVE := "archive"
 const NOTEBOOK := "notebook"
 const PHONE := "phone"
-const CORRIDOR := "corridor"
 
 const TABLE := {
 	ROOM: {"name": "房间", "texture": preload("res://assets/backgrounds/black_page_room_v1.png")},
@@ -20,7 +19,6 @@ const TABLE := {
 	ARCHIVE: {"name": "档案柜", "texture": preload("res://assets/backgrounds/black_page_scene_archive.png")},
 	NOTEBOOK: {"name": "黑页", "texture": preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")},
 	PHONE: {"name": "手机", "texture": preload("res://assets/backgrounds/black_page_scene_phone.png")},
-	CORRIDOR: {"name": "楼道", "texture": preload("res://assets/backgrounds/black_page_prologue_door_v1.png")},
 }
 
 static func has(id: String) -> bool:

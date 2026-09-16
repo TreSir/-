@@ -1,5 +1,5 @@
 extends RefCounted
-## Separate progress from the persistent ending collection.
+## 存档文件的读写。只管进度本身，不碰别的层。
 
 const DIRECTORY := "user://saves"
 const FORMAT_VERSION := 1

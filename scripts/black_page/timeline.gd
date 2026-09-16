@@ -1,5 +1,5 @@
 extends "res://scripts/core/minigame.gd"
-## Slot contract: begin(config, flags), then completed({success: true}).
+## 时间轴小游戏。契约：begin(config, flags) 起，完成后 emit completed({success: true})。
 var order: Array = []
 var selected: Array = []
 var buttons: Array[Button] = []
