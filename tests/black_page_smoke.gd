@@ -25,6 +25,13 @@ func check(value: bool, message: String) -> void:
 ##
 ## in_local_coords 必须传 true：默认 false 时事件坐标按【窗口】坐标解释，
 ## 会被 stretch 变换（1152x720 → 1280x800）再换算一次，导致命中位置整体偏移。
+## 造一个「左键按下」事件，用来直接喂给 gui_input，测热区能不能点。
+func _left_click() -> InputEventMouseButton:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	return event
+
 func _click_at(ui: Node, position: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
@@ -157,10 +164,25 @@ func _ui() -> void:
 	ui.prologue.step = 1
 	ui.prologue._render_page()
 	check(ui.prologue._hotspot_layer.get_child_count() == 5, "hotspot page builds its hotspots")
+	# 真点一下热区：正文要换成那条 response。
+	# 这是玩家的真实操作路径——只数子节点个数证明不了点得动。
+	ui.prologue._hotspot_layer.get_child(0).gui_input.emit(_left_click())
+	await get_tree().process_frame
+	check(ui.prologue._typer.full_text().contains("显示器"),
+		"clicking a hotspot plays its response text")
+	# 真点一下推进：第一下只把打字补完、**不翻页**（两段式），这是序章手感的关键
+	ui.prologue._render_page()
+	ui.prologue._tap()
+	check(not ui.prologue._is_typing(), "first tap completes the typing instead of advancing")
 	# index=3 是许妍那页，挂了 3 个回复选项
 	ui.prologue.step = 3
 	ui.prologue._render_page()
 	check(ui.prologue._choice_layer.get_child_count() == 3, "choice page builds its options")
+	# 真点一下选项：要把它自己那条 set 写进去
+	ui.prologue._choice_layer.get_child(0).pressed.emit()
+	await get_tree().process_frame
+	check(str(ui.game.flag("prologue.reply")) == "have_time",
+		"picking a choice writes its own flag")
 	ui.prologue.step = 0
 	ui.prologue._render_page()
 	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态

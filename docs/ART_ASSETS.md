@@ -207,7 +207,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
    · 序章某页 → data/black_page/prologue.json 那页的 "background" 字段
 6. 验收：
        python tools/audit.py
-       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (81 checks)
+       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (84 checks)
 ```
 
 **第 5 步别偷懒**：图像文件放对了不等于游戏里会用它——
@@ -230,7 +230,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 - [ ] 和 `black_page_room_v1.png` 并排看，亮度/饱和度/透视能接上
 - [ ] 已跑 `--import`
 - [ ] 已接进 `scenes.gd` 或 `prologue.json`
-- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (81 checks)`
+- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (84 checks)`
 
 ---
 
