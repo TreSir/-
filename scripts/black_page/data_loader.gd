@@ -171,6 +171,11 @@ func _compile_prologue(raw: Variant) -> Array:
 			"choices": (choices as Array).duplicate(true) if choices is Array else [],
 			"hotspots": (hotspots as Array).duplicate(true) if hotspots is Array else [],
 			"set": (changes as Dictionary).duplicate(true) if changes is Dictionary else {},
+			# ★ 这两个**必须拷**——只加进 PROLOGUE_FIELDS 白名单是不够的，
+			# 不拷就等于数据被静默丢弃：音乐和音效一个都不会响。
+			"music": (page.get("music", {}) as Dictionary).duplicate(true)
+				if page.get("music", {}) is Dictionary else {},
+			"sfx": page.get("sfx", ""),
 			"speed": float(page.get("speed", 0.0)),
 		})
 	if out.is_empty():

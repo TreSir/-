@@ -340,7 +340,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 86 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 87 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -350,7 +350,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (86 checks)
+# 期望输出：BLACK_PAGE: PASS (87 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -359,7 +359,7 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——少了 27 项。
-**验收标准是 `PASS (86 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (87 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -429,11 +429,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (86 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (87 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (86 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (87 checks)
 ```

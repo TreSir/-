@@ -128,6 +128,17 @@ func _run() -> void:
 	check(not game.complete_action(token, {"success": true}).is_empty() and not game.owns("camera"), "stale callback cannot grant rewards")
 	var loader = Loader.new()
 	var compiled: Dictionary = loader.compile()
+	# 回归：loader 必须把 music / sfx **真的拷进**页面。
+	# 只有字段白名单是不够的 —— 不拷就等于数据被静默丢弃：
+	# 音乐和音效一个都不会响，而测试依然全绿。
+	var prologue_pages: Array = compiled.prologue
+	var with_music := 0
+	var with_sfx := 0
+	for pg in prologue_pages:
+		if not (pg.get("music", {}) as Dictionary).is_empty(): with_music += 1
+		if not str(pg.get("sfx", "")).is_empty(): with_sfx += 1
+	check(with_music >= 2 and with_sfx >= 6,
+		"compiled prologue carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")

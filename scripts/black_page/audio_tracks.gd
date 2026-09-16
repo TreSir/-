@@ -7,6 +7,9 @@ extends RefCounted
 ##
 ## ★ 想换默认曲目，只改下面这三行常量就行，其它地方不用动。
 
+## 细雨。rain_ambience 现在的默认轨（比 RAIN_DEFAULT 干净，见该文件顶部注释）。
+const RAIN_LIGHT := "res://assets/audio/rain_light.ogg"
+
 ## 启动页默认雨声。
 const RAIN_DEFAULT := "res://assets/audio/rain_steady.ogg"
 ## 启动页背景音乐。
