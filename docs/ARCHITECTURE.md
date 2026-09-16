@@ -289,6 +289,37 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——少了 27 项。
 **验收标准是 `PASS (81 checks)` 这个完整字符串，不是「看到 PASS」。**
 
+### 架构审计（改完一轮跑一次）
+
+```bash
+python tools/audit.py            # 0 = 干净；1 = 有真问题
+python tools/audit.py --strict   # 连启发式提示也算失败
+```
+
+它检查 11 项，分四组：
+
+| 组 | 检查 |
+| --- | --- |
+| **铁律** | 只有 `investigation` 能写 `GameState` / 表现层不读数据文件 |
+| **一致性** | `data/*.json` 与 `data_loader` 加载列表对账 / 孤儿 `.uid` / 孤儿 `.import` |
+| **死代码** | 没人调用的函数 / 没人引用的常量 / 没人用的信号 |
+| **配置** | `project.godot` 是否指向已删文件 |
+| **启发式** | 未引用素材 / 未被提及的旗标 / 英文残留注释 |
+
+### ⚠️ 自动审计只能**提出候选**，每条都要人工甄别
+
+实测踩过的假阳性（脚本里已做显式白名单）：
+
+| 报出来的 | 真相 |
+| --- | --- |
+| 立绘「没人引用」 | 路径**动态拼**：`"black_page_portrait_%s%s.png" % [id, suffix]` |
+| 旗标「从没被提及」 | 名字**动态拼**：`"person." + id + ".identity"` |
+| 服务方法「没人调」 | 模块**内部**互调的辅助函数 |
+| 注释里的 `FileAccess` | **注释不是引用**——脚本已剥注释行再匹配 |
+| 英文「残留」 | 数学公式 `scale = max(view / tex)`，语言中立 |
+
+**新增白名单前先想清楚「它是不是动态拼的」。** 光看报告就删，会删掉活的东西。
+
 ### 改图之后必须重新导入
 
 ```bash
@@ -316,3 +347,20 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 - **改了分层、加了新目录、改了 API 口子 → 更新本文档**
 - 文档与代码不一致时，**以文档为准**：要么改代码，要么先改文档再改代码
 - 本文档描述的是**规矩**；具体某段剧情怎么写，看 `black_page_design.md`（策划案）
+
+### 规矩要能被验证，否则只是愿望
+
+| 规矩 | 谁来验证 |
+| --- | --- |
+| 三层单向、只有 `investigation` 写状态 | `tools/audit.py` |
+| 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
+| 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
+| 切图能生效 | `godot --headless --path <项目> --import` |
+| 整套没退化 | `PASS (81 checks)` 这个完整字符串 |
+
+**改完代码跑这两条，都过才算完成：**
+
+```bash
+python tools/audit.py
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (81 checks)
+```
