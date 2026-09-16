@@ -24,7 +24,9 @@ func new_game() -> void:
 	ticket += 1
 	active_action = ""
 	pending.clear()
-	journal = ["雨停过一会，又落了下来。\n林墨发来许妍失踪案的资料。你把手机放在桌上，旁边是一本没有署名的黑色笔记。"]
+	# 与序章结尾直接衔接：许妍凌晨那通电话断了之后，你没能再联系上她。
+	# 这里不再提「林墨发来资料」——林墨在第一章里还没登场，资料也不是他送来的。
+	journal = ["天亮了。雨没有停，只是比昨夜小了些。\n许妍的电话断掉之后，你再也没能联系上她。\n桌上的黑色笔记安静地放着。你还没有想清楚它到底是什么——但昨夜确实发生过。"]
 	GameState.reset()
 	changed.emit()
 
@@ -43,6 +45,23 @@ func reveal_ui(keys: Array) -> String:
 	if not error.is_empty(): return error
 	changed.emit()
 	return ""
+
+## 剧情内容写状态的唯一入口。
+##
+## 序章那种脚本化段落不是「行动」，跑不到 complete_action 的事务里，但它同样
+## **不能越过游戏模块直接改底层状态**——所以在这里开一个受校验的口子：
+## 改完照常发 changed，界面/结算该刷新的都会刷新。
+func apply_state(changes: Dictionary) -> String:
+	if changes.is_empty(): return ""
+	var error: String = GameState.apply({"set": changes})
+	if not error.is_empty(): return error
+	changed.emit()
+	return ""
+
+## 只读的旗标快照，给需要整份状态的调用方（例如小游戏初始化）用。
+## 界面走这个，不要直接摸 GameState。
+func flags_snapshot() -> Dictionary:
+	return GameState.flags.duplicate(true)
 
 func flag(id: String) -> Variant: return GameState.flags.get(id)
 func owns(id: String) -> bool: return GameState.inventory.get(id, 0) > 0

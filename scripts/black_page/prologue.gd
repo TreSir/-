@@ -28,6 +28,9 @@ var pages: Array = []
 ## main.gd 从 `game.bundle.prologue` 注入进来。空的话退到内置文本，保证序章永远能跑完。
 var source: Array = []
 
+## main.gd 注入的调查模块。**序章写状态必须经它**——不越过游戏模块直接改底层状态。
+var game: Node
+
 func _load_pages() -> Array:
 	if source.is_empty():
 		push_warning("序章数据没注入（bundle.prologue 为空），先用内置文本兜底")
@@ -287,10 +290,10 @@ func _render_page() -> void:
 	_speed = _speed_of(entry)
 
 	# 这一页的 set 在**进入这一页时**写入：和玩家点了几下无关。
-	# 失败不静默吞掉——flag 名写错在 flags.json 里查得到。
+	# 走 game 的口子而不是直接改 GameState——flag 名写错会带原因返回。
 	var changes: Dictionary = entry.get("set", {})
-	if not changes.is_empty():
-		var error: String = GameState.apply({"set": changes})
+	if not changes.is_empty() and game != null:
+		var error: String = game.apply_state(changes)
 		if not error.is_empty():
 			push_warning("序章第 %d 页 set 失败：%s" % [step, error])
 
@@ -481,7 +484,7 @@ func _render_choices(raw: Variant) -> void:
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(func():
 			var changes: Dictionary = choice.get("set", {})
-			if not changes.is_empty(): GameState.apply({"set": changes})
+			if not changes.is_empty() and game != null: game.apply_state(changes)
 			_clear_layers()
 			_show_response(str(choice.get("response", ""))))
 		_choice_layer.add_child(button)
@@ -686,6 +689,6 @@ func _finish() -> void:
 	if _done or not is_inside_tree():
 		return
 	_done = true
-	GameState.apply({"set": {"prologue.completed": true}})
+	if game != null: game.apply_state({"prologue.completed": true})
 	finished.emit()
 	queue_free()

@@ -799,8 +799,10 @@ func _show_prologue() -> void:
 	_reveal_hud(false)
 	prologue = Prologue.new()
 	prologue.name = "Prologue"
-	# 序章的剧本也由 data_loader 统一加载，界面这里只负责把数据递进去。
+	# 序章的剧本由 data_loader 统一加载、状态由 investigation 统一写。
+	# 界面只管把这两个依赖递进去，自己不碰数据。
 	prologue.source = game.bundle.get("prologue", [])
+	prologue.game = game
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())
@@ -896,7 +898,7 @@ func _open_minigame(action_id: String) -> void:
 	modal_rows.add_child(activity)
 	activity.completed.connect(func(result: Dictionary):
 		if token == game.ticket: _show_report.call_deferred(action_id, token, result))
-	activity.begin(action.config, GameState.flags.duplicate(true))
+	activity.begin(action.config, game.flags_snapshot())
 	var back := UI.ghost_button("返回（不消耗行动）")
 	back.pressed.connect(func():
 		game.cancel_action()
