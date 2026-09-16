@@ -44,6 +44,10 @@ const MAX_FREE_ACTIONS := 3
 var game = Investigation.new()
 var scene_id := Scenes.ROOM
 var shell: Control
+## 顶栏（黑页／房间 · 第N天 · 剩余行动）。
+## 注意它**不是 shell 的子节点**：_build_topbar 直接挂在主节点上，
+## 所以 _reveal_hud 必须单独管它，否则序章演出时它会一直露着。
+var _topbar: Control
 var header: Label
 var notice: Label
 var modal: Control
@@ -198,6 +202,7 @@ func _build_topbar() -> void:
 	row.offset_top = (UI.TOPBAR_H - 28) * 0.5
 	row.offset_bottom = row.offset_top + 28
 	add_child(row)
+	_topbar = row
 
 	var logo := Button.new()
 	logo.text = "黑　页"
@@ -825,6 +830,8 @@ func _show_prologue() -> void:
 func _reveal_hud(visible_now: bool) -> void:
 	shell.visible = visible_now
 	_rail.visible = visible_now
+	# 顶栏是单独挂的（不是 shell 的子节点），漏了它序章里就会一直露着日期和行动点。
+	if _topbar != null: _topbar.visible = visible_now
 	# 热区跟着 HUD 一起收：序章演出时点背景不该有反应。
 	if _hotspot_layer != null: _hotspot_layer.visible = visible_now
 	# HUD 刚露出来时，侧栏条目要按当前进度重算一次，否则会带着上次的显示状态。

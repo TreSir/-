@@ -102,6 +102,9 @@ var body: Label
 var card: Control
 
 var _backdrop: TextureRect
+## 黑幕：给 background = "black" 的页用。
+## 只把贴图置空的话，序章这层是透明的，底下的主界面会透上来。
+var _blackout: ColorRect
 var _catcher: Button
 var _body_scroll: ScrollContainer
 var _top: HBoxContainer
@@ -148,6 +151,13 @@ func _build() -> void:
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_backdrop)
+
+	_blackout = ColorRect.new()
+	_blackout.color = Color.BLACK
+	_blackout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_blackout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_blackout.visible = false
+	add_child(_blackout)
 
 	# 全屏点击接收层：放在最底层，上面的控件用 IGNORE 让点击落下来。
 	# 这样「点击任意处继续」不会和 _unhandled_input 打架。
@@ -452,13 +462,18 @@ func _apply_backdrop(value: String) -> void:
 	var path := value
 	if path == "door": path = "res://assets/backgrounds/black_page_prologue_door_v1.png"
 	elif path == "note": path = "res://assets/backgrounds/black_page_prologue_notebook_v1.png"
+	# "black" 必须**画成黑的**。只把贴图置空的话这一层是透明的，
+	# 底下的主界面（房间插画 + HUD）会透上来——策划案 §二 要的是黑屏。
 	if path == "black" or path.is_empty():
 		_backdrop.texture = null
+		_blackout.visible = true
 		return
+	_blackout.visible = false
 	if not ResourceLoader.exists(path):
 		_backdrop.texture = null
 		return
 	_backdrop.texture = load(path)
+	_blackout.visible = false
 
 ## UV 比例 → 当前控件的像素矩形。热区和笔记本正文框都用它定位。
 func _uv_to_rect(uv: Array, view: Vector2) -> Rect2:
