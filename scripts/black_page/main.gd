@@ -23,6 +23,8 @@ const Prologue = preload("res://scripts/black_page/prologue.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
+## 热区建层与 UV 换算的共用组件——序章那套也用它。
+const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
 const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
@@ -51,7 +53,7 @@ var music_muted := false
 var nav_buttons: Dictionary = {}
 
 var _scene_layer: TextureRect
-var _hotspot_layer: Control
+var _hotspot_layer: HotspotLayer
 var _fade: ColorRect
 var _catcher: Button
 var _speaker: TextureRect
@@ -559,33 +561,33 @@ func _apply_scene(id: String) -> void:
 ## 放在 _catcher 之后是刻意的——Godot 后加的兄弟画在上面、先命中输入，
 ## 所以点到热区会被它自己吃掉，不会顺带把 _catcher 的「推进剧情」也触发。
 func _build_hotspots() -> void:
-	_hotspot_layer = Control.new()
+	_hotspot_layer = HotspotLayer.new()
 	_hotspot_layer.name = "HotspotLayer"
-	_hotspot_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_hotspot_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_hotspot_layer)
 	_scene_layer.resized.connect(_layout_hotspots)
 	_hotspot_layer.resized.connect(_layout_hotspots)
 
 ## 按当前场景重建热区。热区表里只有 room，所以其他场景这里自然是空。
+##
+## 建层与 UV→屏幕的换算交给共用的 `core/hotspot_layer.gd`——那里全项目只此一份。
+## 这个函数只负责提供「房间热区长什么样」的装饰。
 func _sync_hotspots() -> void:
 	if _hotspot_layer == null: return
-	for child in _hotspot_layer.get_children():
-		_hotspot_layer.remove_child(child)
-		child.queue_free()
-	for hs in Hotspots.for_scene(scene_id):
-		_hotspot_layer.add_child(_make_hotspot(hs))
-	_layout_hotspots()
+	var texture: Texture2D = Scenes.texture_of(scene_id)
+	if texture == null:
+		_hotspot_layer.clear()
+		return
+	_hotspot_layer.setup(Hotspots.for_scene(scene_id),
+		Vector2(texture.get_width(), texture.get_height()),
+		_hotspot_pressed, _decorate_hotspot)
 
-func _make_hotspot(uv: Dictionary) -> Control:
-	var box := Control.new()
-	box.name = str(uv["id"])
-	box.mouse_filter = Control.MOUSE_FILTER_STOP
+## 房间热区的装饰：悬停时一点青光 + 细描边，以及调试用的标签。
+## 黑页的调子要克制，平时完全隐形——所以这些**不进公共路径**，只作为可选回调传进去。
+func _decorate_hotspot(box: Control, item: Dictionary) -> void:
 	box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	box.tooltip_text = str(uv["label"])
-	box.set_meta("uv", uv)
+	box.tooltip_text = str(item.get("label", ""))
 
-	# 悬停反馈：一点青光 + 细描边。黑页的调子要克制，平时完全隐形。
+	# 悬停反馈：一点青光 + 细描边。
 	var glow := Panel.new()
 	glow.name = "Glow"
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -596,7 +598,7 @@ func _make_hotspot(uv: Dictionary) -> Control:
 	box.add_child(glow)
 	box.set_meta("glow", glow)
 
-	var tag := UI.label(str(uv["id"]), UI.SIZE_MICRO, UI.ACCENT)
+	var tag := UI.label(str(item.get("id", "")), UI.SIZE_MICRO, UI.ACCENT)
 	tag.name = "Tag"
 	tag.visible = hotspot_debug
 	tag.position = Vector2(6, 4)
@@ -608,31 +610,19 @@ func _make_hotspot(uv: Dictionary) -> Control:
 	box.mouse_exited.connect(func():
 		var t := box.create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		t.tween_property(glow, "modulate:a", 0.0, 0.22))
-	box.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed \
-				and event.button_index == MOUSE_BUTTON_LEFT:
-			_hotspot_pressed(uv))
-	return box
 
-## 把 UV 换算回屏幕矩形。热区跟着场景层一起缩放，所以窗口一变就重排。
+## 热区层自己管定位。这里只处理调试开关：打开时让所有辉光与标签显形。
 func _layout_hotspots() -> void:
 	if _hotspot_layer == null: return
-	var tex := Scenes.texture_of(scene_id)
-	if tex == null: return
-	var view := _hotspot_layer.size
+	_hotspot_layer.relayout()
+	if not hotspot_debug: return
 	for child in _hotspot_layer.get_children():
 		var box := child as Control
-		var rect := Hotspots.rect_for(box.get_meta("uv"), view,
-				Vector2(tex.get_width(), tex.get_height()))
-		box.position = rect.position
-		box.size = rect.size
-		var glow: Panel = box.get_meta("glow")
-		glow.modulate.a = 1.0 if hotspot_debug else glow.modulate.a
+		var glow: Panel = box.get_meta("glow", null)
+		if glow != null: glow.modulate.a = 1.0
 		var tag: Label = box.get_node_or_null("Tag")
-		if tag != null: tag.visible = hotspot_debug
+		if tag != null: tag.visible = true
 
-## 热区触发。锚点只负责「打开什么」，内容一律复用侧栏那套入口，
-## 这样热区和侧栏永远不会走出两套不同的状态。
 ## 热区触发。锚点只负责「打开什么」，内容一律复用侧栏那套入口，
 ## 这样热区和侧栏永远不会走出两套不同的状态。
 ##

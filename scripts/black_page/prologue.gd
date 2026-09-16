@@ -13,6 +13,8 @@ extends Control
 signal finished
 
 const UI = preload("res://scripts/black_page/ui_style.gd")
+## 热区建层与 UV 换算的共用组件——房间那套也用它，别再各写一份。
+const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
 const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
@@ -150,9 +152,7 @@ func _build() -> void:
 	_visual_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_visual_layer)
 
-	_hotspot_layer = Control.new()
-	_hotspot_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_hotspot_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hotspot_layer = HotspotLayer.new()
 	add_child(_hotspot_layer)
 
 	_choice_layer = VBoxContainer.new()
@@ -490,33 +490,16 @@ func _render_choices(raw: Variant) -> void:
 		_choice_layer.add_child(button)
 	_layout_choices()
 
-## 第一人称热区：rect 是 UV 比例。点一下把 response 播成正文。
-## `advance: true` 的热点推进叙事——读完这一段再点就会翻页，和普通流程一致。
+## 第一人称热区：`rect` 是 UV 比例，点一下把 `response` 播成正文。
+## 建层与 UV→屏幕的换算交给共用的 hotspot_layer——房间那套用的是同一个组件。
 func _render_hotspots(raw: Variant) -> void:
 	if not (raw is Array) or raw.is_empty(): return
-	for item in raw:
-		if not (item is Dictionary): continue
-		var spot: Dictionary = item
-		var button := Button.new()
-		button.flat = true
-		button.focus_mode = Control.FOCUS_NONE
-		button.text = ""
-		button.tooltip_text = str(spot.get("label", ""))
-		var blank := UI.box(Color(1, 1, 1, 0.05), UI.ACCENT, 1, 8, 0)
-		for state in ["normal", "hover", "pressed", "focus"]:
-			button.add_theme_stylebox_override(state, blank)
-		button.set_meta("uv", spot.get("rect", []))
-		var tag := UI.label(str(spot.get("label", "")), UI.SIZE_MICRO, UI.ACCENT)
-		tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		tag.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button.add_child(tag)
-		button.pressed.connect(func():
+	var texture: Texture2D = _backdrop.texture
+	if texture == null: return
+	_hotspot_layer.setup(raw, Vector2(texture.get_width(), texture.get_height()),
+		func(item: Dictionary):
 			_clear_layers()
-			_show_response(str(spot.get("response", ""))))
-		_hotspot_layer.add_child(button)
-	_layout_hotspots()
+			_show_response(str(item.get("response", ""))))
 
 ## 把一个「回应」当成新的一段正文播出来——热区和选项共用这条路径。
 func _show_response(text: String) -> void:
@@ -536,18 +519,9 @@ func _layout_choices() -> void:
 	_choice_layer.offset_top = -(UI.DIALOG_H + 240)
 	_choice_layer.offset_bottom = -(UI.DIALOG_H + 16)
 
-## 热区按 UV 比例映射到当前控件尺寸。
+## 热区层自己管定位——UV→屏幕的换算在 core/hotspot_layer.gd 里，全项目只此一份。
 func _layout_hotspots() -> void:
-	if _hotspot_layer == null: return
-	var view := _hotspot_layer.size
-	if view.x <= 0.0: view = size
-	for child in _hotspot_layer.get_children():
-		var box := child as Control
-		var uv: Variant = box.get_meta("uv", [])
-		if not (uv is Array) or (uv as Array).size() < 4: continue
-		var rect := _uv_to_rect(uv, view)
-		box.position = rect.position
-		box.size = rect.size
+	if _hotspot_layer != null: _hotspot_layer.relayout()
 
 ## 视觉卡片的落位（笔记本按 rect 贴纸页；面板类走自己的 uv）。
 func _layout_visual() -> void:
