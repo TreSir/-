@@ -825,6 +825,8 @@ func _show_prologue() -> void:
 	_reveal_hud(false)
 	prologue = Prologue.new()
 	prologue.name = "Prologue"
+	# 序章的剧本也由 data_loader 统一加载，界面这里只负责把数据递进去。
+	prologue.source = game.bundle.get("prologue", [])
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())
@@ -1337,6 +1339,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_F6 and OS.is_debug_build():
 		_message(game.reload_data(), "已重载调查数据。")
-		# 序章文本也是 data/ 下的 JSON，一起热重载掉。
+		# 序章文本和调查数据一起热重载：先把新数据递进去，再让它重画当前页。
 		if is_instance_valid(prologue):
+			prologue.source = game.bundle.get("prologue", [])
 			prologue.reload_pages()

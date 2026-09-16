@@ -16,62 +16,23 @@ const UI = preload("res://scripts/black_page/ui_style.gd")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
 const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
-## 序章文本在 `res://data/black_page/prologue.json`——**改剧情去改那个文件**。
+## 序章文本在 `res://data/black_page/prologue.json`——**改剧情去改那个文件**（支持 F6 热重载）。
 ##
-## 切分规则：`body` 里**每个换行 = 底部对话框里的一次点击**，空行忽略。
-## 一段太长读不完时，直接在句子之间插一个换行就行。
-## 一页读完（最后一段也打完）才会提示 `action`，再点一下才翻到下一页。
-##
-## 这个文件在 data/ 下，和 actions.json 一样**支持 F6 热重载**（不用重启）。
-const PROLOGUE_PATH := "res://data/black_page/prologue.json"
-
-var pages: Array = []
-
-## 读序章文本。字段缺了给默认值；文件缺失或结构不对就退回下面那份内置文本并告警，
-## 保证序章在任何情况下都能跑完，不会卡住。
-##
-## 每页字段（都是可选的，缺了走默认）：
-##   id / title / body / action
-##   background —— 背景图 res:// 路径；`"black"` 表示纯黑
-##   visual     —— 演出组件：notebook / profile / article / title，独立成一张卡片
-##   choices    —— 轻量分支：点选后把 response 显示为正文，并写入自己的 set
-##   hotspots   —— 第一人称热区：rect 是 UV 比例 [x,y,w,h]，`advance: true` 会推进到下一页
-##   set        —— 进入这一页时写入的状态
-##   speed      —— 这一页的打字速度（字/秒）。**不写就按全局 UI.TYPE_SPEED**
+## 它由 `data_loader` 统一加载并规范化，见 `bundle.prologue`——
+## **全项目只有一条数据管线**，序章不再自己 FileAccess + JSON.parse_string。
+## 每页字段的白名单在 data_loader.gd 的 PROLOGUE_FIELDS（写错字段会在加载时告警）。
 ##
 ## body 里换行符分段（一段一次点击）；`<br>` 是段内换行，不额外点击。
+var pages: Array = []
+
+## main.gd 从 `game.bundle.prologue` 注入进来。空的话退到内置文本，保证序章永远能跑完。
+var source: Array = []
+
 func _load_pages() -> Array:
-	var file := FileAccess.open(PROLOGUE_PATH, FileAccess.READ)
-	if file == null:
-		push_warning("序章文本打不开：%s" % PROLOGUE_PATH)
+	if source.is_empty():
+		push_warning("序章数据没注入（bundle.prologue 为空），先用内置文本兜底")
 		return BUILTIN_PAGES
-	var raw := file.get_as_text()
-	file.close()
-	var parsed = JSON.parse_string(raw)
-	if not (parsed is Dictionary) or not (parsed.get("pages") is Array):
-		push_warning("序章文本结构不对：%s" % PROLOGUE_PATH)
-		return BUILTIN_PAGES
-	var out: Array = []
-	for entry in parsed["pages"]:
-		if not (entry is Dictionary): continue
-		out.append({
-			"id": str(entry.get("id", "")),
-			"title": str(entry.get("title", "")),
-			"body": str(entry.get("body", "")),
-			"action": str(entry.get("action", "")),
-			# 新旧两种写法都认：background 是新字段，bg 是旧字段（door / note）。
-			"background": str(entry.get("background", entry.get("bg", "door"))),
-			"visual": (entry.get("visual", {}) as Dictionary).duplicate(true),
-			"choices": (entry.get("choices", []) as Array).duplicate(true),
-			"hotspots": (entry.get("hotspots", []) as Array).duplicate(true),
-			"set": (entry.get("set", {}) as Dictionary).duplicate(true),
-			# 可选。0 表示「没配」→ 用全局 UI.TYPE_SPEED。
-			"speed": float(entry.get("speed", 0.0)),
-		})
-	if out.is_empty():
-		push_warning("序章文本没有有效页：%s" % PROLOGUE_PATH)
-		return BUILTIN_PAGES
-	return out
+	return source.duplicate(true)
 
 ## 这一页的打字速度：页里配了 speed 就用它，没配（或配成 0）就用全局。
 func _speed_of(entry: Dictionary) -> float:
