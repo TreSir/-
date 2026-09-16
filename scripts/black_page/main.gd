@@ -310,10 +310,6 @@ func _build_shell() -> void:
 	notice = UI.flow("", UI.SIZE_UI, Color("dae6ec"))
 	scroll.add_child(notice)
 
-## 对话框是固定高度的，这里只是把它对回固定位置（换文案后调用一次即可）。
-func _fit_dialogue() -> void:
-	UI.layout_dialogue(shell, UI.DIALOG_H)
-
 func _process(delta: float) -> void:
 	# 打字机：剧情文本逐字出。没走完之前，点击只会把这一句补完，不会推进。
 	if _target_line.is_empty() or notice.text.length() >= _target_line.length():
@@ -1199,31 +1195,6 @@ func _bullet(text: String) -> HBoxContainer:
 	row.add_child(tick)
 	row.add_child(UI.flow(text, UI.SIZE_SMALL + 1, Color("c6d5dd")))
 	return row
-
-func _people_rows() -> Array:
-	var out: Array = []
-	for id in game.bundle.people:
-		if not game.person_flag(id, "discovered"): continue
-		var person: Dictionary = game.bundle.people[id]
-		var column := VBoxContainer.new()
-		column.add_theme_constant_override("separation", 8)
-		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var head := HBoxContainer.new()
-		head.add_theme_constant_override("separation", 12)
-		head.add_child(UI.heading(game.person_name(id), UI.SIZE_TITLE))
-		var chip := UI.chip(PERSON_STATUS[game.person_flag(id, "status")])
-		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		head.add_child(chip)
-		column.add_child(head)
-		column.add_child(UI.flow(str(person.role) + "。" + str(person.description), UI.SIZE_SMALL + 1, Color("c6d5dd")))
-		column.add_child(UI.flow("真实姓名：%s　／　身份确认 %d%%　／　真相掌握 %d%%" % [
-			person.real_name if game.person_flag(id, "identity") == 100 else "尚未确认",
-			int(game.person_flag(id, "identity")),
-			int(game.person_flag(id, "truth")),
-		], UI.SIZE_SMALL, UI.TEXT_DIM))
-		column.add_child(UI.rule())
-		out.append(column)
-	return out
 
 func _clue_rows() -> Array:
 	var out: Array = []

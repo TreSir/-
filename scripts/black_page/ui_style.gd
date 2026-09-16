@@ -229,11 +229,6 @@ static func heading(text: String, size: int = SIZE_TITLE) -> Label:
 	node.add_theme_font_override("font", serif())
 	return node
 
-static func kicker(text: String) -> Label:
-	var node := label(text, SIZE_MICRO, TEXT_MUTE)
-	node.add_theme_constant_override("outline_size", 0)
-	return node
-
 static func rule(alpha: float = 1.0) -> ColorRect:
 	var line := ColorRect.new()
 	line.color = Color(HAIR.r, HAIR.g, HAIR.b, HAIR.a * alpha)

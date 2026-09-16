@@ -17,7 +17,6 @@ func open() -> String:
 	if not loader.error.is_empty(): return loader.error
 	bundle = compiled
 	GameState.configure(bundle)
-	Collections.configure(bundle, false)
 	new_game()
 	return ""
 
