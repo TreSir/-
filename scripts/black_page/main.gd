@@ -83,6 +83,9 @@ func _ready() -> void:
 	game.name = "Investigation"
 	add_child(game)
 	game.changed.connect(refresh)
+	# 结局是这一周的终点：音乐收掉，让最后那段文字自己说话。
+	EventBus.ending_reached.connect(func(_id: String, _entry: String):
+		if is_instance_valid(music): music.fade_out(3.0))
 	var error: String = game.open()
 	if not error.is_empty(): _message(error)
 	else:
@@ -498,6 +501,8 @@ func _enter_room(note_error: String = "", note_success: String = "") -> void:
 	if game.bundle.is_empty(): return
 	_close_menu()
 	_close_modal()
+	# 从「黑页时刻」回来，音乐拿回来（没淡出过的话 play_track 自己会早退）。
+	if is_instance_valid(music): music.play_track(AudioTracks.MUSIC_GAME)
 	_in_room = true
 	await _transition_to(Scenes.ROOM)
 	_say([_latest_line()])
@@ -766,31 +771,39 @@ func _show_launch() -> void:
 		music.set_muted_by_player(value))
 	add_child(launch)
 
-func _dismiss_launch() -> void:
+## 关掉开始页。`into_prologue` 为真时**不切曲而是淡出**——
+## 序章按策划案开场只有雨声、没有音乐，所以这里不能放游戏内底噪。
+func _dismiss_launch(into_prologue := false) -> void:
 	if is_instance_valid(launch):
 		launch.close_to_game()
 		launch = null
-	# 进剧情/进房间之后菜单曲就不合适了，换成更轻的游戏内底噪。
-	if is_instance_valid(music):
-		music.play_track(AudioTracks.MUSIC_GAME)
+	if not is_instance_valid(music):
+		return
+	if into_prologue:
+		music.fade_out(1.8)
+		return
+	# 进房间之后菜单曲就不合适了，换成更轻的游戏内底噪。
+	music.play_track(AudioTracks.MUSIC_GAME)
 
 func _start_new_game() -> void:
 	game.new_game()
 	# 顺序很重要：先把序章盖上去，再让开始页淡出。
 	# 反过来做的话，中间那段「开始页已经没了、序章还没出来」的空档会露出房间，就是那一下闪。
 	_show_prologue()
-	_dismiss_launch()
+	_dismiss_launch(true)
 
 func _continue_game() -> void:
 	var error := game.load_game()
 	if not error.is_empty():
 		_message(error)
 		return
-	if not game.flag("prologue.completed"):
+	# 存档停在序章里的话，同样不能放音乐——序章是雨声的段落。
+	var in_prologue := not game.flag("prologue.completed")
+	if in_prologue:
 		_show_prologue()
 	else:
 		_reveal_game()
-	_dismiss_launch()
+	_dismiss_launch(in_prologue)
 
 func _show_prologue() -> void:
 	if is_instance_valid(prologue): return
@@ -1125,6 +1138,8 @@ func _open_clues() -> void:
 ## 黑页：**只做一件事——写下名字。**
 ## 身份、真相、状态那些都归「人物图鉴」，这里不重复显示。
 func _open_notebook() -> void:
+	# 翻开黑页是「世界安静下来」的时刻：音乐让位给雨声，回房间时再拿回来。
+	if is_instance_valid(music): music.fade_out(1.6)
 	# 翻开黑页在 transitions.json 里配的是 cut（不转场），这里统一走配置。
 	await _transition_to(Scenes.NOTEBOOK)
 	_begin_panel("notebook", "黑页", "纸页上没有规则，也没有劝告。")
