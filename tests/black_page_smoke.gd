@@ -155,6 +155,7 @@ func _ui() -> void:
 	# 序章的音乐是「若有若无，然后消失」：页面声明要求，播放器由 main 注入。
 	# 音频在 headless 下听不到，但「有没有递进去」能验。
 	check(is_instance_valid(ui.prologue.music), "prologue gets the music player injected")
+	check(is_instance_valid(ui.prologue.sfx), "prologue gets the sfx player injected")
 	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED。
 	# 新剧本里 index=14（wait_2332）配了 speed 34。
 	ui.prologue.step = 14

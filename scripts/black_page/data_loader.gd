@@ -128,7 +128,7 @@ func _rules(group: String, pointer: String, row: Dictionary, bundle: Dictionary)
 const PROLOGUE_FIELDS := {
 	"id": true, "title": true, "body": true, "action": true, "background": true,
 	"visual": true, "choices": true, "hotspots": true, "set": true, "speed": true,
-	"music": true,
+	"music": true, "sfx": true,
 	"bg": true,
 }
 const PROLOGUE_VISUALS := ["notebook", "profile", "article", "title"]

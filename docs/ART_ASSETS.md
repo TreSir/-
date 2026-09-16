@@ -207,7 +207,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
    · 序章某页 → data/black_page/prologue.json 那页的 "background" 字段
 6. 验收：
        python tools/audit.py
-       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (85 checks)
+       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (86 checks)
 ```
 
 **第 5 步别偷懒**：图像文件放对了不等于游戏里会用它——
@@ -230,11 +230,70 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 - [ ] 和 `black_page_room_v1.png` 并排看，亮度/饱和度/透视能接上
 - [ ] 已跑 `--import`
 - [ ] 已接进 `scenes.gd` 或 `prologue.json`
-- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (85 checks)`
+- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (86 checks)`
 
 ---
 
-## 十、这份文档怎么维护
+## 十、音频素材
+
+音频**不走图那套规格**（没有比例问题），但同样有清单和接入点。
+
+### 三类声音，三个播放器，互不干扰
+
+| 类别 | 播放器 | 特点 |
+| --- | --- | --- |
+| **BGM** | `scripts/black_page/bgm_player.gd` | 常驻循环，双缓冲交叉淡入淡出 |
+| **雨声** | `scripts/black_page/rain_ambience.gd` | 常驻循环，可被玩家静音 |
+| **音效** | `scripts/core/sfx_player.gd` | **一次性短音**，6 个 player 池化轮播 |
+| 曲目清单 | `scripts/black_page/audio_tracks.gd` | ★ **换曲目只改这一个文件** |
+
+三者各有独立的静音开关，别互相耦合。
+
+### 现有 20 个音频文件（`assets/audio/`）
+
+| 类别 | 文件 |
+| --- | --- |
+| BGM ×6 | `bgm_contemplation` / `empty_city` / `mysterious` / `mysterious_calm` / `dungeon` / `noir_piano` |
+| 雨声 ×4 | `rain_steady`（默认）/ `light` / `heavy` / `thunder` |
+| 音效 ×10 | `sfx_phone_buzz` 手机震动 · `sfx_phone_ring` 来电 · `sfx_impact` 砰 · `sfx_page_turn` 翻页 · `sfx_book_close` 合上书 · `sfx_ui_click` 点击 · `sfx_clock_tick1~4` 时钟滴答 |
+
+**来源与许可**：BGM / 雨声来自 OpenGameArt 的 CC0 / CC-BY（见 `assets/audio/CREDITS.md`）；
+**6 个音效是本项目程序生成的**（无版权问题）；
+时钟滴答来自 OpenGameArt `ticking clock` by bart（CC0）。
+
+### 序章怎么声明声音（数据驱动，别写死在代码里）
+
+```json
+"music": {"play": "res://assets/audio/bgm_mysterious.ogg", "db": -26.0, "fade": 6.0}
+"music": {"stop": true, "fade": 4.0}
+"sfx":   "res://assets/audio/sfx_clock_tick1.wav"
+"sfx":   ["res://assets/audio/a.wav", "res://assets/audio/b.wav"]
+```
+
+- `music` 是**状态型**（放 / 停，带淡入淡出）；`sfx` 是**事件型**（进这一页响一次）
+- `db` 越低越轻。**「若有若无」就靠它**（序章等待段落用 -26dB）
+- **缺素材会安静跳过**——不刷警告，也不阻断剧情
+
+### 加一个音效的流程
+
+```
+1. 素材放进 assets/audio/，文件名 sfx_<用途>.wav（小写 + 下划线）
+2. 在 audio_tracks.gd 里登记常量（★ 唯一的曲目清单）
+3. 跑导入：godot --headless --path <项目> --import
+4. 接到数据上：prologue.json 那一页的 "sfx" 字段（或代码里 sfx.play(常量)）
+5. 验收：python tools/audit.py && 冒烟测试 PASS (86 checks)
+```
+
+### ⚠️ 音频的验收盲区
+
+**headless 测试听不到声音。** 测试只能验「播放器有没有递进去」，
+**响不响、时机对不对、音量合不合适，只有人听着才知道。**
+
+所以音频改动必须**人耳验收**，别只看测试绿了就以为没问题。
+
+---
+
+## 十一、这份文档怎么维护
 
 - **改了比例/尺寸/命名 → 先改本文档**，再改图
 - **每补一张图 → 更新 §四 的清单，从 §五 的缺口里划掉**

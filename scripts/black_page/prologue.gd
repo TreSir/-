@@ -37,6 +37,8 @@ var game: Node
 ## main.gd 注入的音乐播放器。序章的音乐是「若有若无，然后消失」（策划案 §九），
 ## 所以页面可以自己声明对音乐的要求，见 。
 var music: Node
+## main.gd 注入的音效播放器。音效是**事件型**的（分页触发一次，不循环）。
+var sfx: Node
 
 func _load_pages() -> Array:
 	if source.is_empty():
@@ -310,6 +312,7 @@ func _render_page() -> void:
 
 	_apply_backdrop(str(entry.background))
 	_apply_page_music(entry.get("music", {}))
+	_play_page_sfx(entry.get("sfx", ""))
 	_clear_layers()
 	_render_visual(entry.get("visual", {}))
 	_render_hotspots(entry.get("hotspots", []))
@@ -377,6 +380,21 @@ func _apply_page_music(spec: Variant) -> void:
 	var track := str(changes.get("play", ""))
 	if track.is_empty(): return
 	music.play_track(track, fade, float(changes.get("db", -20.0)))
+
+## 放这一页声明的音效。**事件型**：进这一页响一次，不循环、不淡入淡出。
+##
+##   "sfx": "res://assets/audio/sfx_impact.wav"              一个
+##   "sfx": ["res://.../a.wav", "res://.../b.wav"]           同时几个
+##
+## 缺素材会安静跳过（和 BGM / 雨声一个规矩），不阻断剧情。
+func _play_page_sfx(spec: Variant) -> void:
+	if sfx == null: return
+	if spec is String:
+		if not (spec as String).is_empty(): sfx.play(spec)
+		return
+	if spec is Array:
+		for path in spec:
+			sfx.play(str(path))
 
 ## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载；旧写法 door / note 兜底。
 func _apply_backdrop(value: String) -> void:

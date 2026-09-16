@@ -31,3 +31,15 @@ const MUSIC_ALTERNATIVES := {
 	"dungeon": "res://assets/audio/bgm_dungeon.ogg",                 # 低频暗流、压迫
 	"noir_piano": "res://assets/audio/bgm_noir_piano.ogg",           # 忧郁爵士钢琴（偏短，16s）
 }
+
+## 音效（一次性短音）。走 core/sfx_player.gd，和 BGM / 雨声各走各的。
+##
+## 来源：前 6 个是**程序生成**的（本项目自己合成，无版权问题）；
+## 时钟滴答来自 OpenGameArt 的 CC0 素材（ticking clock, by bart）。
+const SFX_PHONE_BUZZ := "res://assets/audio/sfx_phone_buzz.wav"
+const SFX_PHONE_RING := "res://assets/audio/sfx_phone_ring.wav"
+const SFX_IMPACT := "res://assets/audio/sfx_impact.wav"
+const SFX_PAGE_TURN := "res://assets/audio/sfx_page_turn.wav"
+const SFX_BOOK_CLOSE := "res://assets/audio/sfx_book_close.wav"
+const SFX_UI_CLICK := "res://assets/audio/sfx_ui_click.wav"
+const SFX_CLOCK_TICK := "res://assets/audio/sfx_clock_tick1.wav"

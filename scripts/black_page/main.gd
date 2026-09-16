@@ -23,6 +23,8 @@ const Prologue = preload("res://scripts/black_page/prologue.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
+## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
+const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
 ## 逐字显示。序章那套也是同一个组件——打字机全项目只此一份。
@@ -50,6 +52,7 @@ var prologue: Prologue
 var launch: Launch
 var rain: RainAmbience
 var music: BgmPlayer
+var sfx: SfxPlayer
 var rain_muted := false
 var music_muted := false
 var nav_buttons: Dictionary = {}
@@ -744,6 +747,10 @@ func _show_launch() -> void:
 		add_child(music)
 	music.set_muted_by_player(music_muted)
 	music.play_track(AudioTracks.MUSIC_MENU)
+	if not is_instance_valid(sfx):
+		sfx = SfxPlayer.new()
+		sfx.name = "SfxPlayer"
+		add_child(sfx)
 	launch = Launch.new()
 	launch.name = "Launch"
 	launch.can_continue = not Store.new().read("black_page_slot_1").has("error")
@@ -808,6 +815,7 @@ func _show_prologue() -> void:
 	prologue.game = game
 	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
 	prologue.music = music
+	prologue.sfx = sfx
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())

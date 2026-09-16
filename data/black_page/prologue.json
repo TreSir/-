@@ -136,6 +136,8 @@
     },
     {
       "id": "wait_2332",
+      "#sfx": "倒计时：时钟滴答",
+      "sfx": "res://assets/audio/sfx_clock_tick1.wav",
       "#music": "策划案 §九：雨越来越大，背景音乐开始慢慢消失",
       "music": {"stop": true, "fade": 4.0},
       "title": "23:32",
@@ -154,6 +156,8 @@
     },
     {
       "id": "countdown_2346",
+      "#sfx": "最后一分钟，还是那个滴答",
+      "sfx": "res://assets/audio/sfx_clock_tick3.wav",
       "title": "23:46",
       "body": "雨点落在玻璃上，别的什么都听不见。\n时钟走过最后一分钟。",
       "action": "23:47",
@@ -170,6 +174,8 @@
     },
     {
       "id": "news_buzz",
+      "#sfx": "23:47 手机在桌面震动：嗡——",
+      "sfx": "res://assets/audio/sfx_phone_buzz.wav",
       "title": "23:47 ／ 新闻推送",
       "body": "嗡——\n手机在桌面上震动。\n一条本地新闻推送占满屏幕。",
       "action": "打开新闻",
@@ -219,6 +225,8 @@
     },
     {
       "id": "next_you_write",
+      "#sfx": "猛地合上笔记",
+      "sfx": "res://assets/audio/sfx_book_close.wav",
       "title": "黑页",
       "body": "墨迹没有停。\n那句话刚才并不存在。\n你猛地合上笔记。",
       "action": "……",
@@ -236,6 +244,8 @@
     },
     {
       "id": "morning_phone",
+      "#sfx": "次日 07:32 许妍来电",
+      "sfx": "res://assets/audio/sfx_phone_ring.wav",
       "title": "第二天 ／ 07:32",
       "body": "手机铃声突然响起。\n窗外已经亮了，昨夜的雨还留在玻璃上。\n来电人：许妍。",
       "action": "接听",
@@ -253,6 +263,8 @@
     },
     {
       "id": "call_drops",
+      "#sfx": "砰。手机摔到地上",
+      "sfx": "res://assets/audio/sfx_impact.wav",
       "title": "通话中 ／ 00:11",
       "body": "电话里传来一句很轻的话。\n你只听清一个字：\n“别……”\n砰。像是手机摔到地上。通话中断。",
       "action": "立即回拨",
