@@ -1,87 +1,120 @@
-# 自研视觉小说框架 · V2
+# 《黑页》
 
-Godot 4.x / GDScript。**打开 project.godot，按 F5 运行《黑页》首章原型。**
+Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，按 F5 运行。**
 
-新增：[《黑页》操作与编辑指南（含路线与 JSON 示例）](docs/BLACK_PAGE_MVP.md)。策划来源：[核心玩法与系统策划案 V0.2](docs/black_page_design.md)。
+主场景是 `res://scenes/black_page/main.tscn`。目前是**一个案件的短流程切片**：
+调查、身份反转、限时线索、落笔及次日后果。完整三案长篇仍待制作。
 
-黑页入口是 `scenes/black_page/main.tscn`，内容在 `data/black_page/`。目前为一个案件的短流程切片，包含调查、身份反转、限时线索、落笔及次日后果；完整三案长篇仍待制作。下文为原 V2 通用框架说明，旧灯塔示例可打开 `scenes/main.tscn` 单独运行。
+- 内容全在 `data/black_page/*.json`——**改剧情不用动代码**
+- **[架构规约](docs/ARCHITECTURE.md)**：改代码前先读它，那是这个项目的规矩
+- [核心玩法与系统策划案](docs/black_page_design.md)：剧情内容怎么写
 
-第一次使用建议阅读 **[框架使用指南（含完整实战示例）](docs/USER_GUIDE.md)**。
+---
 
-## 已实现
+## 一句话架构
 
-- 对话、角色、背景/立绘、选项、章节跳转、Flag、优先级多结局。
-- 背包：数量/堆叠上限、关键道具、可重复阅读线索、消耗品、剧情条件判定。
-- 图鉴：人物/地点/道具/线索/结局；未解锁隐藏详情，秘密条目隐藏名称，跨周目保留。
-- 独立小游戏场景：参数进入、结果映射到声明的 Flag、过期回调保护。
-- 视频节点：播放/跳过；当前没有视频素材，演示自动跳过。
-- 独立命令类自动注册、事件总线、强类型与范围校验。
-- 开发模式剧本热重载、文件+行号诊断、旧存档迁移。
-- 游戏内调试控制台、实时变量监视、执行历史、按节点 ID 跳转。
+> **表现层永远不碰状态，只调 `investigation` 的公开方法。**
+
+```
+表现层   scripts/black_page/（13 个）          界面 · 演出 · 输入
+   │    只调公开方法
+   ▼
+引擎层   investigation.gd + services/ + core/  零 UI 依赖，可 headless 跑测试
+   │
+   ▼
+数据层   data/black_page/*.json + data_loader.gd
+```
+
+**三条铁律**（都有脚本在查）：
+
+| # | 规矩 |
+| --- | --- |
+| 1 | **只有 `investigation.gd` 能写 `GameState`** |
+| 2 | 表现层不读数据文件（不 `FileAccess`、不 `JSON.parse_string`） |
+| 3 | 数据只经 `data_loader` 加载并校验 |
+
+**两条必须记住的机制**：
+
+- **事务提交** —— `snapshot()` → 在副本上改 → `validate_snapshot()` → 全过才整体换入。失败返回错误，**状态零变化**
+- **ticket 令牌** —— 异步回调要带发起时的 token，`token != game.ticket` 就丢弃
+
+---
 
 ## 最常改的文件
 
 | 想改什么 | 文件 |
 | --- | --- |
-| 对话、选项、流程、发道具 | `data/chapters/prologue.json` |
-| 起点、章节列表、剧情版本 | `data/game.json` |
-| Flag 类型、默认值、范围 | `data/flags.json` |
-| 角色定义 | `data/characters.json` |
-| 结局条件和优先级 | `data/endings.json` |
-| 道具与图鉴定义 | `data/catalog.json` |
-| 翻译文本 | `data/locales.json` |
-| 主界面布局 | `scenes/main.tscn` |
-| 新增剧情指令 | `scripts/commands/*.gd` |
-| 新小游戏 | `scenes/minigames/`、`scripts/minigames/` |
+| 序章剧本 | `data/black_page/prologue.json` |
+| 调查方向（正文 / 条件 / 奖励） | `data/black_page/actions.json` |
+| 旗标类型与默认值 | `data/black_page/flags.json` |
+| 人物 | `data/black_page/people.json` |
+| 线索 | `data/black_page/clues.json` |
+| 案件 | `data/black_page/cases.json` |
+| 定时事件 | `data/black_page/events.json` |
+| 结局 | `data/black_page/endings.json` |
+| 人物图鉴档案 | `data/black_page/codex.json` |
+| 转场方式 | `data/black_page/transitions.json` |
+| 场景（名称 / 贴图） | `scripts/black_page/scenes.gd` |
+| 房间热区 | `scripts/black_page/hotspots.gd` |
+| 视觉令牌（颜色 / 字号 / 间距） | `scripts/black_page/ui_style.gd` |
+| 音频素材 | `scripts/black_page/audio_tracks.gd` |
 
-详细说明：[架构与扩展](docs/ARCHITECTURE.md) · [剧本编辑指南](docs/AUTHORING.md)。
+**新增一个数据文件要动三处**：`data/` 下建 json → `data_loader.gd` 的加载列表 → 需要就加校验。
+漏了会在启动时直接报错——这是设计如此，不是意外。
 
-## 试玩路径
+---
 
-1. 开场“继续”后获得旧钥匙和两杯热茶。
-2. 打开“背包”：热茶消耗一份并增加勇气；数量不足或 Flag 越界时整次操作失败，不扣道具。
-3. 选择“开启档案柜”：交出钥匙、获得信件。使用信件可解锁秘密线索，不消耗信件。
-4. 留下 → 小游戏收集三个信号 → 灯火相连；留下后放弃小游戏 → 一起等待；离开 → 海岸独行。
-5. 图鉴独立保留发现记录，读旧档与重新开始不清除图鉴。
+## 加内容的三条路
 
-背包/图鉴打开时暂停小游戏，关闭后继续。主界面保存/读档目前为一个槽位。
-
-## 调试与热重载
-
-调试构建可按 **F1**，或点击“调试 F1”：
-
-```text
-get
-set trust 2
-set puzzle.success true
-nodes
-history
-jump prologue.invitation
-reload
+```
+多一段剧情 / 线索 / 结局   →  加数据。改 JSON，不动代码
+多一个可调查的地方         →  scenes.gd 加条目 + transitions.json + hotspots.gd
+多一种玩法 / 新界面        →  先在 investigation 加方法，再在表现层做界面
+                             ★ 不要为了界面方便绕过 investigation
 ```
 
-改变量使用同一套类型和范围校验。跳转保留当前状态，不代表回滚历史；调试预览禁止写正式进度存档，结局预览不解锁结局。重新开始恢复正常游玩。
-
-运行时约每秒检查数据文件内容。合法修改立即替换剧本并重绘当前等待节点；错误修改报告文件+行号，继续保留上一份可用剧本。热重载**不重复执行前面的发奖节点**。
-当前节点被删、命令类型改变或现有状态不符合新 Flag 定义时拒绝替换。
+---
 
 ## 验证
 
-```text
-godot --headless --path <project-src目录> res://tests/framework_v2.tscn
-godot --headless --path <project-src目录> --quit-after 12
+改完必须跑这两条，**都过才算完成**：
+
+```bash
+python tools/audit.py                                            # 期望 exit 0
+godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (92 checks)
 ```
 
-V2 验证场景覆盖核心流程、背包、图鉴、存档迁移、热重载回退、命令扩展、循环保护及主界面流程。
-测试使用 `user://framework_tests/`，不覆盖玩家存档，不持久化测试图鉴。测试文件执行结束后清理。
+⚠️ **验收标准是 `PASS (92 checks)` 这个完整字符串，不是「看到 PASS」。**
+测试只在 `failures == 0` 时报 PASS；一旦有解析错误，后面的检查全部不执行，
+failures 仍是 0 → **假 PASS**。改了测试要同步更新这个数字，以及
+`docs/ARCHITECTURE.md` 里对应的说法。
+
+`tools/audit.py` 查 11 项，分四组：铁律 / 一致性（data 与 loader 对账、孤儿文件）/
+死代码（没人调的函数、常量、信号）/ 配置，外加一组启发式提示。
+**启发式项会误报**（动态拼路径、动态拼旗标名、注释里的 `FileAccess`），
+光看报告就删会删掉活的东西——每条都要人工甄别。
+
+改了图片之后必须重新导入，否则游戏读到的还是缓存里的旧图：
+
+```bash
+godot --headless --path <项目> --import
+```
+
+---
+
+## 开发时用得上的
+
+- **F6** 热重载数据（仅调试构建），或走 ☰ → 重载数据。改 JSON 不用重启游戏
+- **☰** 里收着：存档 / 读取 / 重新开始 / 雨声 / 背景音乐
+- 存档目前**只有一个槽位**：`user://saves/black_page_slot_1.json`
+  （写盘是「先写 `.tmp` 再改名」，不会写出半个存档）
+
+---
 
 ## 当前边界
 
-- 这是可运行、可维护的项目基础，不是已完成的商业游戏或“企业认证”产品。
-- DSL 尚未实现；JSON 前端已输出统一 AST，可增加第二种前端复用校验器/解释器。
-- 热重载覆盖已引用的数据文件；改 GDScript 命令后重启运行。重新渲染视频/小游戏节点会从节点开头恢复。
-- 视频实际解码尚未验证；原生视频优先使用 `.ogv`，MP4 需要转码或额外解码支持。
-- 已有迁移函数覆盖 V1 → V2；未来有破坏性修改仍须新增迁移函数，不会凭空推断业务语义。
-- 已提供中英切换与回退机制，仅演示开场及部分 UI 完成翻译，其他中文直写内容尚未全量本地化。
-- AI 美术素材尚未生成。画面槽位可先填资源路径，确定主题后再批量制作统一风格素材。
-- 导出时将 `data/*.json,data/**/*.json` 加入非资源文件包含过滤；使用“导出所有资源”，确保自动注册命令脚本被打包。尚未做发行包验证。
+- 首章切片，不是完整游戏；三案长篇待制作
+- AI 美术素材为占位性质，风格尚未统一
+- 未做发行包验证。导出时需把 `data/**/*.json` 加入非资源文件包含过滤
+- 音效与背景音乐已接入，均为 CC0 / CC-BY 可商用素材；
+  **其中两首 CC-BY 曲目发布时必须署名**，清单见 `assets/audio/CREDITS.md`

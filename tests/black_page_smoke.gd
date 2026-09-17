@@ -241,6 +241,9 @@ func _ui() -> void:
 		await get_tree().process_frame
 		prologue_guard += 1
 	check(prologue_guard >= 32, "every prologue page was walked (%d)" % prologue_guard)
+	# 剧情回顾：序章的正文必须被记下来——玩家点快了要能翻回去看。
+	# 记在 main 而不是序章自己：回顾要收全（序章 + 第一章），只能有一个地方收。
+	check((ui._history as Array).size() >= 32, "prologue text lands in the review history")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.1).timeout
 		await RenderingServer.frame_post_draw

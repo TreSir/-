@@ -38,7 +38,6 @@ const OUTLINE_SIZE := 5
 
 # ── 字号（四档，别再全用同一个号）──────────────────────────────────────
 const SIZE_DISPLAY := 68
-const SIZE_CHAPTER := 86
 const SIZE_TITLE := 24
 const SIZE_BODY := 18
 const SIZE_UI := 15

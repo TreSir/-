@@ -61,6 +61,7 @@ var music: BgmPlayer
 var sfx: SfxPlayer
 var rain_muted := false
 var music_muted := false
+var sfx_muted := false
 var nav_buttons: Dictionary = {}
 
 var _scene_layer: TextureRect
@@ -86,6 +87,14 @@ var _on_done: Callable = Callable()
 var _typer := Typewriter.new()
 ## 当前这批叙述的打字速度。用 _say() 的 speed 参数覆盖，默认取全局。
 var _beat_speed := UI.TYPE_SPEED
+
+## 看过的文字。**剧情回顾**用——玩家点快了没看清，能翻回来。
+## 记在 main 上而不是各处：回顾要覆盖「所有看过的字」，
+## 而序章和第一章的正文是分开跑的，只有这里能收全。
+var _history: Array = []
+
+## 回顾最多留这么多条，超了丢最旧的（存的是全文，别无限涨）。
+const HISTORY_CAP := 120
 var _in_room := true
 var _open_panel := ""
 
@@ -399,10 +408,17 @@ func _render_menu_rows() -> void:
 	_add_toggle_row("雨声：%s" % ("关" if rain_muted else "开"), _toggle_rain)
 	_menu_panel.add_child(UI.rule(0.6))
 	_add_toggle_row("背景音乐：%s" % ("关" if music_muted else "开"), _toggle_music)
+
+	_menu_panel.add_child(UI.rule(0.6))
+
+	_add_toggle_row("音效：%s" % ("关" if sfx_muted else "开"), _toggle_sfx)
+	_menu_panel.add_child(UI.rule(0.6))
+	_add_toggle_row("全屏：%s" % ("开" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "关"), _toggle_fullscreen)
 	if OS.is_debug_build():
 		_menu_panel.add_child(UI.rule(0.6))
 		_add_menu_row(_menu_panel, "重载数据", "F6", func(): _message(game.reload_data(), "已重载调查数据。"))
 	_menu_panel.add_child(UI.rule(0.6))
+	_add_menu_row(_menu_panel, "回顾", "看过的文字", _open_history)
 	_add_menu_row(_menu_panel, "回到房间", "", _enter_room)
 
 ## 开关类条目：点完不关菜单，直接原地重画，方便连着调。
@@ -418,6 +434,16 @@ func _toggle_rain() -> void:
 	rain_muted = not rain_muted
 	if is_instance_valid(rain):
 		rain.set_muted_by_player(rain_muted)
+
+func _toggle_sfx() -> void:
+	sfx_muted = not sfx_muted
+	if is_instance_valid(sfx):
+		sfx.set_muted_by_player(sfx_muted)
+
+## 全屏开关。窗口模式只在这里切，别在别处改。
+func _toggle_fullscreen() -> void:
+	var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func _toggle_music() -> void:
 	music_muted = not music_muted
@@ -478,6 +504,14 @@ func _build_modal() -> void:
 	modal.hide()
 
 # ── 剧情推进 ─────────────────────────────────────────────────────────────
+## 记一句看过的文字。**序章也走这里**（它拿到的 game 旁边多一个 record 回调）。
+func record_line(text: String) -> void:
+	var clean := text.strip_edges()
+	if clean.is_empty(): return
+	_history.append(clean)
+	if _history.size() > HISTORY_CAP:
+		_history = _history.slice(_history.size() - HISTORY_CAP)
+
 ## 播一段叙述。点一下画面推进一句；**最后一句读完、再点一下才执行 on_done**。
 ## 调查的结算、回房间都挂在 on_done 上——主界面不摆任何推进按钮。
 ##
@@ -496,7 +530,9 @@ func _show_next_beat() -> void:
 		if done.is_valid(): done.call()
 		return
 	# 段内换行用 <br>，不是 \n——\n 是分段（点一次），<br> 只挪到下一行，不多点一次。
-	_typer.set_line(str(_queue.pop_front()), _beat_speed)
+	var line := str(_queue.pop_front())
+	_typer.set_line(line, _beat_speed)
+	record_line(line)
 	notice.text = ""
 	_set_speaker(_typer.full_text())
 
@@ -832,6 +868,7 @@ func _show_prologue() -> void:
 	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
 	prologue.music = music
 	prologue.sfx = sfx
+	prologue.record = record_line
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())
@@ -1144,6 +1181,17 @@ func _portrait_texture(person_id: String) -> Texture2D:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path)
+
+## 剧情回顾：把看过的文字**倒着**列出来（最近的在最上面，翻起来顺手）。
+## 面板照现有那几个写（_begin_panel / _end_panel），不另立一套。
+func _open_history() -> void:
+	_begin_panel("history", "回顾", "看过的文字")
+	if _history.is_empty():
+		modal_rows.add_child(UI.flow("还没有看过任何文字。", UI.SIZE_BODY, UI.TEXT_DIM))
+	else:
+		for index in range(_history.size() - 1, -1, -1):
+			modal_rows.add_child(UI.flow(str(_history[index]), UI.SIZE_BODY, Color("c6d5dd")))
+	_end_panel("合上回顾")
 
 func _open_clues() -> void:
 	_begin_panel("clue", "线索", "你掌握的线索")

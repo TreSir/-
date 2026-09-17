@@ -43,6 +43,9 @@ var game: Node
 var music: Node
 ## main.gd 注入的音效播放器。音效是**事件型**的（分页触发一次，不循环）。
 var sfx: Node
+## main.gd 注入的记录回调：把看过的正文交给「剧情回顾」。
+## 不在这里自己存一份——回顾要收全（序章 + 第一章），只能有一个地方收。
+var record: Callable = Callable()
 
 func _load_pages() -> Array:
 	if source.is_empty():
@@ -381,6 +384,7 @@ func _lines_of(text: String) -> Array:
 ## 段内换行用 `<br>`（不是 \n）——`\n` 是分段，`<br>` 只是把句子挪到下一行，不多点一次。
 func _show_beat() -> void:
 	_typer.set_line(str(_beats[_beat]), _speed)
+	if record.is_valid(): record.call(_typer.full_text())
 	body.text = ""
 	if _body_scroll != null:
 		_body_scroll.scroll_vertical = 0
