@@ -537,6 +537,10 @@ func record_line(text: String) -> void:
 ## 玩家偏好存在**单独的文件**里，和存档分开——
 ## 重开新档不该把音量、文字速度这些一起清掉。
 const PREFS_NAME := "prefs"
+
+## 数据缺失时的占位页。**调用方持有兜底**，引擎不自带内容——
+## 这是职责边界：引擎只管播，管不了也不该管「没有数据时放什么」。
+const FALLBACK_PAGE := {"id": "blank", "title": "", "body": "", "background": "black"}
 var _prefs_store = Store.new()
 
 ## 读回上次的设置。启动时在 _build() 之前调，这样界面一出来就是对的。
@@ -912,7 +916,10 @@ func _show_prologue() -> void:
 	scripted.name = "Scripted"
 	# 序章的剧本由 data_loader 统一加载、状态由 investigation 统一写。
 	# 界面只管把这两个依赖递进去，自己不碰数据。
+	# 兜底是**调用方**的责任：数据缺失时给一页占位，保证引擎永远有东西可播。
 	scripted.source = game.bundle.get("prologue", [])
+	if (scripted.source as Array).is_empty():
+		scripted.source = [FALLBACK_PAGE]
 	scripted.game = game
 	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
 	scripted.music = music

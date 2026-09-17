@@ -150,6 +150,12 @@ const PROLOGUE_FIELDS := {
 }
 const PROLOGUE_VISUALS := ["notebook", "profile", "article", "title"]
 
+## 背景别名 → 资源路径。只在这一层翻译；引擎永远不认识具体素材。
+const BACKDROP_ALIASES := {
+	"door": "res://assets/backgrounds/black_page_prologue_door_v1.png",
+	"note": "res://assets/backgrounds/black_page_prologue_notebook_v1.png",
+}
+
 ## 按字段表取一个值。查不到就用表里的默认值，并按默认值的类型做一次转换。
 ##
 ## 转换规则只有三条，按默认值的类型分派，够用且不用给每个字段写代码：
@@ -198,6 +204,9 @@ func _compile_prologue(raw: Variant) -> Array:
 		# 旧写法 bg 的兜底：background 没给才用它。
 		if str(compiled.background).is_empty():
 			compiled.background = str(page.get("bg", "door"))
+		# 别名规范化：**数据进引擎前就变成干净数据**——
+		# 引擎（core/scripted.gd）只认 res:// 路径和 "black"，不认识 door / note 这种剧本私有别名。
+		compiled.background = str(BACKDROP_ALIASES.get(str(compiled.background), str(compiled.background)))
 		out.append(compiled)
 	if out.is_empty():
 		_fail("prologue", "", "没有任何有效页")

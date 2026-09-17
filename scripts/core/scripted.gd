@@ -1,14 +1,18 @@
 extends Control
-## 剧本段落：在进入调查中心之前，先用一小段可玩流程证明「笔记本是真的」。
+## 剧本引擎（系统级组件，不专属任何章节）。
 ##
-## 改造点：
-## 1. 补上两张背景图（楼道纸盒 / 摊开的黑页），此前只有一层纯色遮罩。
-## 2. 底部那张硬定位的方块卡片，换成通栏渐隐字幕带——这是策划案里「底部剧情文本」的位置。
-## 3. 加打字机、点击任意处推进、页码点阵、自动与跳过。
-## 4. 结尾的章节标题卡独立成屏，不再复用对话卡，也去掉了字号突变与按钮脉冲。
+## **职责**：把调用方给的一份「页数组」播给玩家看——
+##   背景 · 字幕卡 · 热区 · 选项 · 演出卡片 · 音乐/音效 · 状态写入 · 进度条。
+## **不管**：数据从哪来（调用方注入 `source`）、素材叫什么（loader 已规范化成路径）、
+##           剧情内容（那是数据文件的事）。
 ##
-## 注意 `_advance()` 保持「无条件翻页」语义：它是给测试和程序化调用用的。
-## 玩家的点击走 `_tap()`，那一层才有「先补完打字再翻页」的两段式行为。
+## 使用者：
+##   序章   = 引擎 + prologue.json   + 「开始新游戏」触发
+##   以后的剧情段落 = 引擎 + 任意页数组 + 调用方选定的触发点
+##
+## 输入的两种路径，语义不同，别混用：
+##   `_advance()` 无条件翻页——给测试与程序化调用用。
+##   `_tap()`     玩家点击——才有「先补完打字再翻页」的两段式行为。
 
 signal finished
 
@@ -21,8 +25,6 @@ const Typewriter = preload("res://scripts/core/typewriter.gd")
 const PROGRESS_W := 132.0
 ## 墨迹渗出。黑页上的字靠它「像墨一样渗出来」，见 assets/shaders/ink_bleed.gdshader。
 const INK_SHADER = preload("res://assets/shaders/ink_bleed.gdshader")
-const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
-const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
 ## 剧本段落文本在 `res://data/black_page/prologue.json`——**改剧情去改那个文件**（支持 F6 热重载）。
 ##
@@ -54,8 +56,9 @@ var record: Callable = Callable()
 
 func _load_pages() -> Array:
 	if source.is_empty():
-		push_warning("序章数据没注入（bundle.prologue 为空），先用内置文本兜底")
-		return BUILTIN_PAGES
+		# 兜底是**调用方**的责任（main 会给一页占位）；引擎只保证自己不崩。
+		push_warning("剧本数据没注入（source 为空），用一页空内容占位")
+		return [{"id": "blank", "title": "", "body": "", "background": "black"}]
 	return source.duplicate(true)
 
 ## 这一页的打字速度：页里配了 speed 就用它，没配（或配成 0）就用全局。
@@ -71,38 +74,6 @@ func reload_pages() -> void:
 	_render_page()
 
 ## 内置兜底文本（prologue.json 正常时不会用到）。
-const BUILTIN_PAGES := [
-	{
-		"title": "雨夜 ／ 00:17",
-		"body": "楼道的声控灯灭了又亮。\n门缝下方，有人塞进来一个没有署名的纸盒。\n\n纸盒里是一册黑色笔记，封面干净得像从来没有被人碰过。",
-		"action": "查看手机",
-		"bg": "door"
-	},
-	{
-		"title": "未读消息 ／ 1",
-		"body": "本地新闻：催收员高启明因非法拘禁、暴力威胁多名租户被立案调查。\n\n今天下午，他仍带人堵在受害者陈岚的住处。陈岚在语音里只说了一句：\n“他们说，明天会再来。”\n\n他的名字、照片和住址，被人整理得过于完整。",
-		"action": "打开黑色笔记",
-		"bg": "door"
-	},
-	{
-		"title": "黑页",
-		"body": "纸页自己翻开。\n\n左页写着：高启明\n身份确认：完整\n\n右页没有规则，也没有任何解释。只有一支笔，停在你的手边。\n\n这次不需要继续调查。",
-		"action": "写下「高启明」",
-		"bg": "note"
-	},
-	{
-		"title": "00:31",
-		"body": "笔尖划过纸面。\n\n高启明。\n\n墨迹很快渗进纸纤维，像这个名字本来就在那里。\n你合上笔记。楼下的雨声没有任何变化。",
-		"action": "等到明天",
-		"bg": "note"
-	},
-	{
-		"title": "次日 ／ 09:04",
-		"body": "突发新闻：涉暴力催收案件的高启明，今晨在住处突发心脏骤停死亡。\n\n陈岚发来一条很短的消息：\n“他们走了。”\n\n你盯着那本黑色笔记。它不是恶作剧。它是真的。",
-		"action": "……",
-		"bg": "note"
-	}
-]
 
 var step := 0
 var title: Label
@@ -153,7 +124,7 @@ func _ready() -> void:
 
 func _build() -> void:
 	_backdrop = TextureRect.new()
-	_backdrop.texture = BG_DOOR
+	_backdrop.texture = null
 	_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -468,9 +439,9 @@ func _play_page_sfx(spec: Variant) -> void:
 
 ## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载；旧写法 door / note 兜底。
 func _apply_backdrop(value: String) -> void:
+	## 进来的 value 只会是 res:// 路径或 "black"——
+	## 剧本私有别名（door / note）在 loader 规范化时已经翻译掉了。
 	var path := value
-	if path == "door": path = "res://assets/backgrounds/black_page_prologue_door_v1.png"
-	elif path == "note": path = "res://assets/backgrounds/black_page_prologue_notebook_v1.png"
 	# "black" 必须**画成黑的**。只把贴图置空的话这一层是透明的，
 	# 底下的主界面（房间插画 + HUD）会透上来——策划案 §二 要的是黑屏。
 	if path == "black" or path.is_empty():
