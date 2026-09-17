@@ -1,5 +1,5 @@
 extends Control
-## 序章：在进入调查中心之前，先用一小段可玩流程证明「笔记本是真的」。
+## 剧本段落：在进入调查中心之前，先用一小段可玩流程证明「笔记本是真的」。
 ##
 ## 改造点：
 ## 1. 补上两张背景图（楼道纸盒 / 摊开的黑页），此前只有一层纯色遮罩。
@@ -24,21 +24,21 @@ const INK_SHADER = preload("res://assets/shaders/ink_bleed.gdshader")
 const BG_DOOR = preload("res://assets/backgrounds/black_page_prologue_door_v1.png")
 const BG_NOTE = preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")
 
-## 序章文本在 `res://data/black_page/prologue.json`——**改剧情去改那个文件**（支持 F6 热重载）。
+## 剧本段落文本在 `res://data/black_page/prologue.json`——**改剧情去改那个文件**（支持 F6 热重载）。
 ##
 ## 它由 `data_loader` 统一加载并规范化，见 `bundle.prologue`——
-## **全项目只有一条数据管线**，序章不再自己 FileAccess + JSON.parse_string。
+## **全项目只有一条数据管线**，剧本段落不再自己 FileAccess + JSON.parse_string。
 ## 每页字段的白名单在 data_loader.gd 的 PROLOGUE_FIELDS（写错字段会在加载时告警）。
 ##
 ## body 里换行符分段（一段一次点击）；`<br>` 是段内换行，不额外点击。
 var pages: Array = []
 
-## main.gd 从 `game.bundle.prologue` 注入进来。空的话退到内置文本，保证序章永远能跑完。
+## main.gd 从 `game.bundle.prologue` 注入进来。空的话退到内置文本，保证剧本段落永远能跑完。
 var source: Array = []
 
-## main.gd 注入的调查模块。**序章写状态必须经它**——不越过游戏模块直接改底层状态。
+## main.gd 注入的调查模块。**剧本段落写状态必须经它**——不越过游戏模块直接改底层状态。
 var game: Node
-## main.gd 注入的音乐播放器。序章的音乐是「若有若无，然后消失」（策划案 §九），
+## main.gd 注入的音乐播放器。剧本段落的音乐是「若有若无，然后消失」（策划案 §九），
 ## 所以页面可以自己声明对音乐的要求，见 。
 var music: Node
 ## main.gd 注入的音效播放器。音效是**事件型**的（分页触发一次，不循环）。
@@ -49,7 +49,7 @@ var sfx: Node
 var type_scale := 1.0
 
 ## main.gd 注入的记录回调：把看过的正文交给「剧情回顾」。
-## 不在这里自己存一份——回顾要收全（序章 + 第一章），只能有一个地方收。
+## 不在这里自己存一份——回顾要收全（剧本段落 + 第一章），只能有一个地方收。
 var record: Callable = Callable()
 
 func _load_pages() -> Array:
@@ -111,14 +111,14 @@ var card: Control
 
 var _backdrop: TextureRect
 ## 黑幕：给 background = "black" 的页用。
-## 只把贴图置空的话，序章这层是透明的，底下的主界面会透上来。
+## 只把贴图置空的话，剧本段落这层是透明的，底下的主界面会透上来。
 var _blackout: ColorRect
 var _catcher: Button
 var _body_scroll: ScrollContainer
 var _top: HBoxContainer
 ## 进度：**一条定宽细线**，不是「一页一个小点」。
 ##
-## 小点写法在 5 页的序章里刚好，32 页就变成横贯整屏的虚线了——
+## 小点写法在 5 页的剧本段落里刚好，32 页就变成横贯整屏的虚线了——
 ## 页数一多，小点既占地方又读不出信息（32 个小点谁也数不清）。
 var _progress_fill: ColorRect
 var _hint: Label
@@ -404,9 +404,9 @@ func _fade_in(node: Control, delay := 0.0, dur := 0.45) -> void:
 
 ## 热区的悬停反馈。
 ##
-## 序章的热区**平时完全隐形**（靠正文点出可点的东西），但鼠标扫上去必须有回应，
+## 剧本段落的热区**平时完全隐形**（靠正文点出可点的东西），但鼠标扫上去必须有回应，
 ## 否则玩家不知道自己指到了什么。所以这里只给一圈极淡的青边，
-## 不做房间那套辉光、也不做调试标签——那些不该出现在序章。
+## 不做房间那套辉光、也不做调试标签——那些不该出现在剧本段落。
 func _decorate_hotspot(box: Control, _item: Dictionary) -> void:
 	box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var ring := Panel.new()
@@ -434,7 +434,7 @@ func _clear_layers() -> void:
 
 ## 应用这一页声明的音乐要求。
 ##
-## 序章的音乐是「若有若无，然后消失」——策划案 §九 的原话是
+## 剧本段落的音乐是「若有若无，然后消失」——策划案 §九 的原话是
 ## 「房间里**原本若有若无的音乐**已经停了」，所以它归数据管，不写死在代码里：
 ##
 ##   {"play": "res://assets/audio/x.ogg", "db": -26.0, "fade": 5.0}   放（db 越低越若有若无）
@@ -789,7 +789,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 ## 无条件翻页：给测试与程序化调用用。玩家输入走 _tap()。
 ##
-## 翻过最后一页就是序章结束。
+## 翻过最后一页就是剧本段落结束。
 ## **不要在结尾再弹一次标题卡**——「黑页」这个标题在数据里已经有自己的一页
 ## （`game_title`，正文走完之后、许妍电话之前），那是它唯一该出现的地方。
 ## 旧版这里会调 _show_title() 把游戏名再放一遍，结果屏幕上弹了两次《黑页》，
@@ -805,7 +805,7 @@ func _advance() -> void:
 
 ## 章节标题卡：**只有游戏名**，别的什么都没有。
 ## 字从略小缓慢放大，配合淡入——不做按钮、不做副标题、不做装饰线。
-## 序章结束：把该写的状态写掉，交接给第一章。
+## 剧本段落结束：把该写的状态写掉，交接给第一章。
 func _finish() -> void:
 	if _done or not is_inside_tree():
 		return

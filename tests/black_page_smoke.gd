@@ -139,7 +139,7 @@ func _run() -> void:
 	for key in Loader.PROLOGUE_FIELDS:
 		if not (compiled.prologue[0] as Dictionary).has(str(key)):
 			not_copied.append(str(key))
-	check(not_copied.is_empty(), "every declared prologue field reaches the page (%s)" % str(not_copied))
+	check(not_copied.is_empty(), "every declared scripted field reaches the page (%s)" % str(not_copied))
 	# 回归：loader 必须把 music / sfx **真的拷进**页面。
 	# 只有字段白名单是不够的 —— 不拷就等于数据被静默丢弃：
 	# 音乐和音效一个都不会响，而测试依然全绿。
@@ -150,7 +150,7 @@ func _run() -> void:
 		if not (pg.get("music", {}) as Dictionary).is_empty(): with_music += 1
 		if not str(pg.get("sfx", "")).is_empty(): with_sfx += 1
 	check(with_music >= 2 and with_sfx >= 6,
-		"compiled prologue carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
+		"compiled scripted carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")
@@ -174,7 +174,7 @@ func _ui() -> void:
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_launch.png")
 	ui._start_new_game()
 	await get_tree().create_timer(0.6).timeout
-	check(is_instance_valid(ui.prologue) and not ui._hud_layer.visible, "opening prologue gates investigation hub")
+	check(is_instance_valid(ui.scripted) and not ui._hud_layer.visible, "opening scripted gates investigation hub")
 	# HUD 的成员**必须都挂在 _hud_layer 下**：显隐是一刀切的（只切这一个节点），
 	# 挂在别处就不会跟着收——顶栏以前就是这么在序章里一直露着日期和行动点的。
 	# 这条断言守的是**结构**，不是某个节点的 visible 值。
@@ -184,54 +184,54 @@ func _ui() -> void:
 		"every hud member lives under the hud layer")
 	# 序章的音乐是「若有若无，然后消失」：页面声明要求，播放器由 main 注入。
 	# 音频在 headless 下听不到，但「有没有递进去」能验。
-	check(is_instance_valid(ui.prologue.music), "prologue gets the music player injected")
-	check(is_instance_valid(ui.prologue.sfx), "prologue gets the sfx player injected")
+	check(is_instance_valid(ui.scripted.music), "prologue gets the music player injected")
+	check(is_instance_valid(ui.scripted.sfx), "prologue gets the sfx player injected")
 	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED。
 	# 新剧本里 index=14（wait_2332）配了 speed 34。
-	ui.prologue.step = 14
-	ui.prologue._render_page()
-	check(ui.prologue._speed == 34.0, "page speed overrides the global typing speed")
-	ui.prologue.step = 0
-	ui.prologue._render_page()
-	check(ui.prologue._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
+	ui.scripted.step = 14
+	ui.scripted._render_page()
+	check(ui.scripted._speed == 34.0, "page speed overrides the global typing speed")
+	ui.scripted.step = 0
+	ui.scripted._render_page()
+	check(ui.scripted._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
 	# 演出组件要真的建出来：index=1 是出租屋那一页，挂了 5 个热点
-	ui.prologue.step = 1
-	ui.prologue._render_page()
-	check(ui.prologue._hotspot_layer.get_child_count() == 5, "hotspot page builds its hotspots")
+	ui.scripted.step = 1
+	ui.scripted._render_page()
+	check(ui.scripted._hotspot_layer.get_child_count() == 5, "hotspot page builds its hotspots")
 	# 真点一下热区：正文要换成那条 response。
 	# 这是玩家的真实操作路径——只数子节点个数证明不了点得动。
-	ui.prologue._hotspot_layer.get_child(0).gui_input.emit(_left_click())
+	ui.scripted._hotspot_layer.get_child(0).gui_input.emit(_left_click())
 	await get_tree().process_frame
-	check(ui.prologue._typer.full_text().contains("显示器"),
+	check(ui.scripted._typer.full_text().contains("显示器"),
 		"clicking a hotspot plays its response text")
 	# 真点一下推进：第一下只把打字补完、**不翻页**（两段式），这是序章手感的关键
-	ui.prologue._render_page()
-	ui.prologue._tap()
-	check(not ui.prologue._is_typing(), "first tap completes the typing instead of advancing")
+	ui.scripted._render_page()
+	ui.scripted._tap()
+	check(not ui.scripted._is_typing(), "first tap completes the typing instead of advancing")
 	# index=3 是许妍那页，挂了 3 个回复选项
-	ui.prologue.step = 3
-	ui.prologue._render_page()
-	check(ui.prologue._choice_layer.get_child_count() == 3, "choice page builds its options")
+	ui.scripted.step = 3
+	ui.scripted._render_page()
+	check(ui.scripted._choice_layer.get_child_count() == 3, "choice page builds its options")
 	# 真点一下选项：要把它自己那条 set 写进去
-	ui.prologue._choice_layer.get_child(0).pressed.emit()
+	ui.scripted._choice_layer.get_child(0).pressed.emit()
 	await get_tree().process_frame
 	check(str(ui.game.flag("prologue.reply")) == "have_time",
 		"picking a choice writes its own flag")
 	# 文字速度档位是**倍率**，不是绝对值：序章页面里配的 speed 是演出意图
 	# （越接近 23:47 打得越慢），那属于内容，不能被玩家的偏好抹掉。
-	ui.prologue.type_scale = 2.0
-	check(is_equal_approx(ui.prologue._speed_of({"speed": 21.0}), 42.0),
+	ui.scripted.type_scale = 2.0
+	check(is_equal_approx(ui.scripted._speed_of({"speed": 21.0}), 42.0),
 		"player type scale multiplies the authored page speed")
-	ui.prologue.type_scale = ui._type_scale()
-	ui.prologue.step = 0
-	ui.prologue._render_page()
+	ui.scripted.type_scale = ui._type_scale()
+	ui.scripted.step = 0
+	ui.scripted._render_page()
 	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态
-	ui.prologue._auto = true
-	ui.prologue._refresh_auto()
-	check(ui.prologue._auto_link.text == "自动中", "auto mode marks itself on the button")
-	ui.prologue._auto = false
-	ui.prologue._refresh_auto()
-	check(ui.prologue._auto_link.text == "自动", "auto mode reverts the button label")
+	ui.scripted._auto = true
+	ui.scripted._refresh_auto()
+	check(ui.scripted._auto_link.text == "自动中", "auto mode marks itself on the button")
+	ui.scripted._auto = false
+	ui.scripted._refresh_auto()
+	check(ui.scripted._auto_link.text == "自动", "auto mode reverts the button label")
 	# 截图模式：序章几种演出各拍一张，方便肉眼验收
 	# （房间热点 / 聊天卡 / 纸页写字 / 新闻卡 / 标题卡）。
 	# 每张等一小会儿让打字机推进，拍到的才是真实画面。
@@ -239,22 +239,22 @@ func _ui() -> void:
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		for shot in [[1, "prologue_room"], [3, "prologue_chat"], [7, "prologue_rules"],
 				[10, "prologue_article"], [25, "prologue_title"]]:
-			ui.prologue.step = shot[0]
-			ui.prologue._render_page()
+			ui.scripted.step = shot[0]
+			ui.scripted._render_page()
 			await get_tree().create_timer(0.9).timeout
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png(
 				"user://screenshots/black_page_%s.png" % shot[1])
-		ui.prologue.step = 0
-		ui.prologue._render_page()
+		ui.scripted.step = 0
+		ui.scripted._render_page()
 	# 把整段序章走完：32 页，逐页推进到序章自己被释放。
 	# `_advance()` 是「无条件翻页」，和玩家点击走的 `_tap()` 不是一层。
 	var prologue_guard := 0
-	while is_instance_valid(ui.prologue) and prologue_guard < 40:
-		ui.prologue._advance()
+	while is_instance_valid(ui.scripted) and prologue_guard < 40:
+		ui.scripted._advance()
 		await get_tree().process_frame
 		prologue_guard += 1
-	check(prologue_guard >= 32, "every prologue page was walked (%d)" % prologue_guard)
+	check(prologue_guard >= 32, "every scripted page was walked (%d)" % prologue_guard)
 	# 剧情回顾：序章的正文必须被记下来——玩家点快了要能翻回去看。
 	# 记在 main 而不是序章自己：回顾要收全（序章 + 第一章），只能有一个地方收。
 	check((ui._history as Array).size() >= 32, "prologue text lands in the review history")
@@ -263,7 +263,7 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_chapter.png")
 	await get_tree().create_timer(1.6).timeout
-	check(not is_instance_valid(ui.prologue) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
+	check(not is_instance_valid(ui.scripted) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
@@ -280,7 +280,7 @@ func _ui() -> void:
 	# 这类问题来自「全屏容器默认 MOUSE_FILTER_STOP 盖在上面吃点击」，
 	# 直接调方法测不出来，必须模拟真实鼠标点击。
 	await get_tree().process_frame
-	check(ui.nav_buttons["people"].visible and ui.nav_buttons["pocket"].visible, "people and pocket unlock from prologue data")
+	check(ui.nav_buttons["people"].visible and ui.nav_buttons["pocket"].visible, "people and pocket unlock from scripted data")
 	check(not ui.nav_buttons["case"].visible and not ui.nav_buttons["notebook"].visible, "case and notebook stay hidden until touched")
 	await get_tree().create_timer(0.6).timeout
 

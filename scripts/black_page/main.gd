@@ -10,7 +10,7 @@ extends Control
 ##   · 存档 / 读取 / 重开 / 雨声 / 背景音乐收在最下面的 ☰。
 ##
 ## 兼容性约束（tests/black_page_smoke.gd 依赖，改动前先看这里）：
-##   · 节点名保留：shell / header / notice / modal / modal_rows / launch / prologue / game。
+##   · 节点名保留：shell / header / notice / modal / modal_rows / launch / scripted / game。
 ##   · refresh() 后 header.text 必须含「第 N 天」。
 ##   · _confirm 产出 modal_rows：0 标题、1 正文、2 确认按钮、3 返回按钮
 ##     （_ask_write 会直接改 2 和 3 的文字）。
@@ -19,7 +19,7 @@ extends Control
 
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Room = preload("res://scripts/black_page/room.gd")
-const Prologue = preload("res://scripts/black_page/prologue.gd")
+const Scripted = preload("res://scripts/core/scripted.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
@@ -59,7 +59,7 @@ var header: Label
 var notice: Label
 var modal: Control
 var modal_rows: VBoxContainer
-var prologue: Prologue
+var scripted: Scripted
 var launch: Launch
 var rain: RainAmbience
 var music: BgmPlayer
@@ -904,25 +904,25 @@ func _continue_game() -> void:
 	_dismiss_launch(in_prologue)
 
 func _show_prologue() -> void:
-	if is_instance_valid(prologue): return
+	if is_instance_valid(scripted): return
 	_close_menu()
 	_close_modal()
 	_reveal_hud(false)
-	prologue = Prologue.new()
-	prologue.name = "Prologue"
+	scripted = Scripted.new()
+	scripted.name = "Scripted"
 	# 序章的剧本由 data_loader 统一加载、状态由 investigation 统一写。
 	# 界面只管把这两个依赖递进去，自己不碰数据。
-	prologue.source = game.bundle.get("prologue", [])
-	prologue.game = game
+	scripted.source = game.bundle.get("prologue", [])
+	scripted.game = game
 	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
-	prologue.music = music
-	prologue.sfx = sfx
-	prologue.record = record_line
-	prologue.type_scale = _type_scale()
-	prologue.finished.connect(func():
-		prologue = null
+	scripted.music = music
+	scripted.sfx = sfx
+	scripted.record = record_line
+	scripted.type_scale = _type_scale()
+	scripted.finished.connect(func():
+		scripted = null
 		_reveal_game())
-	add_child(prologue)
+	add_child(scripted)
 
 ## 左侧栏和底部字幕带是同一条命：剧情演出时整条 HUD 一起收起。
 func _reveal_hud(visible_now: bool) -> void:
@@ -1403,7 +1403,7 @@ func _message(error: String, success: String = "") -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo: return
 	if event.keycode == KEY_ESCAPE:
-		if is_instance_valid(launch) or is_instance_valid(prologue): return
+		if is_instance_valid(launch) or is_instance_valid(scripted): return
 		if _menu_layer != null and _menu_layer.visible:
 			_close_menu()
 			get_viewport().set_input_as_handled()
@@ -1413,13 +1413,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
-		if is_instance_valid(launch) or is_instance_valid(prologue) or modal.visible: return
+		if is_instance_valid(launch) or is_instance_valid(scripted) or modal.visible: return
 		_advance_story()
 		get_viewport().set_input_as_handled()
 		return
 	if event.keycode == KEY_F6 and OS.is_debug_build():
 		_message(game.reload_data(), "已重载调查数据。")
 		# 序章文本和调查数据一起热重载：先把新数据递进去，再让它重画当前页。
-		if is_instance_valid(prologue):
-			prologue.source = game.bundle.get("prologue", [])
-			prologue.reload_pages()
+		if is_instance_valid(scripted):
+			scripted.source = game.bundle.get("prologue", [])
+			scripted.reload_pages()

@@ -124,7 +124,7 @@
 | 文件 | 职责 | 关键约束 |
 | --- | --- | --- |
 | `main.gd` | 主界面。场景切换、底部对话、中央选项、侧栏、弹层、转场、输入分发 | 只调 `game.xxx()`；不读数据文件 |
-| `prologue.gd` | 序章演出。逐页推进，支持四种演出卡片 | 剧本从 `bundle.prologue` 拿；写状态走 `game.apply_state()` |
+| `core/scripted.gd` | **剧本引擎**（系统级，不专属序章）。逐页推进，支持四种演出卡片；吃任意「页数组」 | 剧本从 `bundle.prologue` 拿；写状态走 `game.apply_state()` |
 | `investigation.gd` | **游戏逻辑中枢**。行动可用性、结算、落笔、结束一天、结局判定 | **唯一允许写 `GameState` 的地方** |
 | `data_loader.gd` | 编译 `data/black_page/*.json` → `bundle`；字段校验 + 跨文件引用检查 + 规范化 | 加数据文件必须同时改这里的加载列表 |
 | `ui_style.gd` | 视觉令牌 + 控件工厂。所有 UI 构件从这儿造 | 颜色/字号/间距只在这里定义 |
@@ -215,7 +215,7 @@ data/black_page/*.json
    bundle（内存字典）
       │
       ├──▶ investigation.gd    （读 bundle 判断与结算）
-      ├──▶ prologue.gd         （读 bundle.prologue 演序章）
+      ├──▶ core/scripted.gd         （读 bundle.prologue 演序章）
       └──▶ main.gd             （读 bundle 画界面）
       │
       ▼
@@ -514,7 +514,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 要加什么 | 动哪里 | 处数 | 机器守着 |
 | --- | --- | --- | --- |
 | **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
-| 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `prologue.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
+| 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
 | 一个数据文件（新组） | `data/` 建 JSON + `data_loader` 加载列表 +（需要就）校验 | 2~3 处 | ✓ 对账 data 文件与 loader 列表 |
