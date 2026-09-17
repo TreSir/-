@@ -209,6 +209,12 @@ func _ui() -> void:
 	await get_tree().process_frame
 	check(str(ui.game.flag("prologue.reply")) == "have_time",
 		"picking a choice writes its own flag")
+	# 文字速度档位是**倍率**，不是绝对值：序章页面里配的 speed 是演出意图
+	# （越接近 23:47 打得越慢），那属于内容，不能被玩家的偏好抹掉。
+	ui.prologue.type_scale = 2.0
+	check(is_equal_approx(ui.prologue._speed_of({"speed": 21.0}), 42.0),
+		"player type scale multiplies the authored page speed")
+	ui.prologue.type_scale = ui._type_scale()
 	ui.prologue.step = 0
 	ui.prologue._render_page()
 	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态

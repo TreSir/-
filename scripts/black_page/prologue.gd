@@ -43,6 +43,11 @@ var game: Node
 var music: Node
 ## main.gd 注入的音效播放器。音效是**事件型**的（分页触发一次，不循环）。
 var sfx: Node
+## main.gd 注入的文字速度倍率（玩家档位）。
+## **乘在页面 speed 之上**——页面里配的 speed 是演出意图（越接近 23:47 越慢），
+## 那属于内容，不该被玩家偏好抹掉；玩家的档位只是整体调快调慢。
+var type_scale := 1.0
+
 ## main.gd 注入的记录回调：把看过的正文交给「剧情回顾」。
 ## 不在这里自己存一份——回顾要收全（序章 + 第一章），只能有一个地方收。
 var record: Callable = Callable()
@@ -56,7 +61,7 @@ func _load_pages() -> Array:
 ## 这一页的打字速度：页里配了 speed 就用它，没配（或配成 0）就用全局。
 func _speed_of(entry: Dictionary) -> float:
 	var value := float(entry.get("speed", 0.0))
-	return value if value > 0.0 else UI.TYPE_SPEED
+	return (value if value > 0.0 else UI.TYPE_SPEED) * type_scale
 
 ## F6 热重载时调用：重读 JSON，并把当前这一页按新文本重画。
 func reload_pages() -> void:

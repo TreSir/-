@@ -41,6 +41,11 @@ const RELIABILITY := {"reliable": "可靠", "dubious": "存疑", "contradictory"
 const DAY_TIMES := ["23:40", "18:40", "14:20", "09:10"]
 const MAX_FREE_ACTIONS := 3
 
+## 文字速度档位。**倍率**，不是绝对字/秒——见 _type_scale_index 的注释。
+## 最后一档不是「很快」而是「不逐字」：乘上去之后一句话基本一帧内就完。
+const TYPE_SCALES := [0.6, 1.0, 1.6, 40.0]
+const TYPE_LABELS := ["慢", "正常", "快", "立即"]
+
 var game = Investigation.new()
 var scene_id := Scenes.ROOM
 var shell: Control
@@ -87,6 +92,12 @@ var _on_done: Callable = Callable()
 var _typer := Typewriter.new()
 ## 当前这批叙述的打字速度。用 _say() 的 speed 参数覆盖，默认取全局。
 var _beat_speed := UI.TYPE_SPEED
+## 玩家的文字速度档位（索引）。
+##
+## **它是倍率，不是绝对值** —— 数据里配的 speed 是作者的演出意图
+## （序章越接近 23:47 打得越慢），那属于内容，不能被玩家的偏好抹掉。
+## 所以玩家档位乘在作者意图之上：可访问性优先，但保留相对节奏。
+var _type_scale_index := 1
 
 ## 看过的文字。**剧情回顾**用——玩家点快了没看清，能翻回来。
 ## 记在 main 上而不是各处：回顾要覆盖「所有看过的字」，
@@ -101,6 +112,7 @@ var _open_panel := ""
 
 func _ready() -> void:
 	name = "BlackPage"
+	_load_prefs()
 	_build()
 	game.name = "Investigation"
 	add_child(game)
@@ -413,6 +425,8 @@ func _render_menu_rows() -> void:
 
 	_add_toggle_row("音效：%s" % ("关" if sfx_muted else "开"), _toggle_sfx)
 	_menu_panel.add_child(UI.rule(0.6))
+	_add_toggle_row("文字速度：%s" % TYPE_LABELS[_type_scale_index], _cycle_type_scale)
+	_menu_panel.add_child(UI.rule(0.6))
 	_add_toggle_row("全屏：%s" % ("开" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "关"), _toggle_fullscreen)
 	if OS.is_debug_build():
 		_menu_panel.add_child(UI.rule(0.6))
@@ -432,11 +446,13 @@ func _add_toggle_row(text: String, callback: Callable) -> void:
 
 func _toggle_rain() -> void:
 	rain_muted = not rain_muted
+	_save_prefs()
 	if is_instance_valid(rain):
 		rain.set_muted_by_player(rain_muted)
 
 func _toggle_sfx() -> void:
 	sfx_muted = not sfx_muted
+	_save_prefs()
 	if is_instance_valid(sfx):
 		sfx.set_muted_by_player(sfx_muted)
 
@@ -447,6 +463,7 @@ func _toggle_fullscreen() -> void:
 
 func _toggle_music() -> void:
 	music_muted = not music_muted
+	_save_prefs()
 	if is_instance_valid(music):
 		music.set_muted_by_player(music_muted)
 
@@ -517,10 +534,42 @@ func record_line(text: String) -> void:
 ##
 ## `speed` 传 0（默认）就用全局 `UI.TYPE_SPEED`；
 ## 某条调查想快/慢，可以在 actions.json 里给它配 `"speed"`。
+## 玩家偏好存在**单独的文件**里，和存档分开——
+## 重开新档不该把音量、文字速度这些一起清掉。
+const PREFS_NAME := "prefs"
+var _prefs_store = Store.new()
+
+## 读回上次的设置。启动时在 _build() 之前调，这样界面一出来就是对的。
+func _load_prefs() -> void:
+	var prefs: Dictionary = _prefs_store.read(PREFS_NAME)
+	rain_muted = bool(prefs.get("rain", rain_muted))
+	music_muted = bool(prefs.get("music", music_muted))
+	sfx_muted = bool(prefs.get("sfx", sfx_muted))
+	_type_scale_index = clampi(int(prefs.get("type_scale", _type_scale_index)), 0, TYPE_SCALES.size() - 1)
+
+## 改完设置就存。**设置不记住等于没做**——下次启动又回到默认，玩家要重调一遍。
+func _save_prefs() -> void:
+	_prefs_store.write(PREFS_NAME, {
+		"rain": rain_muted,
+		"music": music_muted,
+		"sfx": sfx_muted,
+		"type_scale": _type_scale_index,
+	})
+
+## 循环切换文字速度档位。
+func _cycle_type_scale() -> void:
+	_type_scale_index = (_type_scale_index + 1) % TYPE_SCALES.size()
+	_save_prefs()
+
+## 当前档位的倍率。夹一下索引，坏数据不该让整段叙述变成静止。
+func _type_scale() -> float:
+	return float(TYPE_SCALES[clampi(_type_scale_index, 0, TYPE_SCALES.size() - 1)])
+
 func _say(lines: Array, on_done: Callable = Callable(), speed: float = 0.0) -> void:
 	_queue = lines.duplicate()
 	_on_done = on_done
-	_beat_speed = speed if speed > 0.0 else UI.TYPE_SPEED
+	# 作者的意图 × 玩家的档位：两者都要，不是二选一。
+	_beat_speed = (speed if speed > 0.0 else UI.TYPE_SPEED) * _type_scale()
 	_show_next_beat()
 
 func _show_next_beat() -> void:
@@ -869,6 +918,7 @@ func _show_prologue() -> void:
 	prologue.music = music
 	prologue.sfx = sfx
 	prologue.record = record_line
+	prologue.type_scale = _type_scale()
 	prologue.finished.connect(func():
 		prologue = null
 		_reveal_game())
