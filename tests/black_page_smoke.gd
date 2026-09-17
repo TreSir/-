@@ -132,6 +132,14 @@ func _run() -> void:
 	check(not game.complete_action(token, {"success": true}).is_empty() and not game.owns("camera"), "stale callback cannot grant rewards")
 	var loader = Loader.new()
 	var compiled: Dictionary = loader.compile()
+	# ★ 字段表驱动的**结构性断言**：表里声明的每个字段，都必须真的出现在编译结果里。
+	# 守的是「校验」和「拷贝」读同一张表这个性质本身——以前这两件事写在两个地方，
+	# 只改一处就会静默丢数据（music / sfx 丢过一次：音效一个都不响，而测试全绿）。
+	var not_copied: Array = []
+	for key in Loader.PROLOGUE_FIELDS:
+		if not (compiled.prologue[0] as Dictionary).has(str(key)):
+			not_copied.append(str(key))
+	check(not_copied.is_empty(), "every declared prologue field reaches the page (%s)" % str(not_copied))
 	# 回归：loader 必须把 music / sfx **真的拷进**页面。
 	# 只有字段白名单是不够的 —— 不拷就等于数据被静默丢弃：
 	# 音乐和音效一个都不会响，而测试依然全绿。

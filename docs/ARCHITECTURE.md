@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 94 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 95 项测试。
 
 ---
 
@@ -429,7 +429,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (94 checks)
+# 期望输出：BLACK_PAGE: PASS (95 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -438,7 +438,7 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——少了 27 项。
-**验收标准是 `PASS (94 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (95 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -493,7 +493,50 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 
 ---
 
-## 十二、这份文档怎么维护
+## 十二、新增东西要动哪里（对照表）
+
+> **目的**：让「加东西」有章法——先查这张表，别靠记忆。
+> 「机器守着」那一列是**测试或审计会替你发现漏改**的意思；打 ✗ 的只能靠人。
+
+### 常态：加内容（不动代码）
+
+| 要加什么 | 动哪里 | 机器守着 |
+| --- | --- | --- |
+| 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
+| 一条调查方向 | `actions.json` | ✓ 引用校验 |
+| 一条线索 / 一个人 / 一个案件 / 一个结局 / 一个事件 | 对应的 JSON | ✓ 跨文件引用校验 |
+| 一条人物档案条目 | `codex.json` | ✓ |
+| 一张图 | 放 `assets/` + `--import` + 在 `scenes.gd` 或 JSON 里引用 | ✓ audit 查未引用素材 |
+| 一个音效 / 一首曲目 | 放 `assets/audio/` + 在 `audio_tracks.gd` 登记 + JSON 里引用 | ✗ 靠人（audit 只查未引用） |
+
+### 加机制（要动代码）
+
+| 要加什么 | 动哪里 | 处数 | 机器守着 |
+| --- | --- | --- | --- |
+| **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
+| 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `prologue.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
+| 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
+| 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
+| 一个数据文件（新组） | `data/` 建 JSON + `data_loader` 加载列表 +（需要就）校验 | 2~3 处 | ✓ 对账 data 文件与 loader 列表 |
+| 一个新的人物 | `people.json` + `flags.json` 里四个 `person.*` 声明 + **立绘给齐 3 张** | 3 处 | ✓ 缺状态声明会启动报错；✗ 立绘靠人 |
+| 一个新状态旗标 | `flags.json` 一行 | 1 处 | ✓ 未声明的旗标写入会报错 |
+
+### 三条设计约束（加东西之前先想）
+
+1. **能不能只改数据？** —— 能就别碰代码（见 §０ 第二问）
+2. **同一件事会不会写在两个地方？** —— 会的话先改成一张表（见 §四 的 `PROLOGUE_FIELDS`）
+3. **加完之后，测试能发现漏改吗？** —— 不能的话，想想能不能加一条断言
+
+### 反面教材（真实事故）
+
+`music` / `sfx` 两个字段曾经**加进白名单却没加进拷贝**：
+校验通过、数据丢失、音乐音效一个都不响，**而 86 项测试全绿**。
+修完之后加了「表里每个字段都必须出现在编译结果里」这条断言——
+**守的是「校验和拷贝读同一张表」这个性质本身**，而不是某个字段是否存在。
+
+---
+
+## 十三、这份文档怎么维护
 
 - **改了分层、加了新目录、改了 API 口子 → 更新本文档**
 - 文档与代码不一致时，**以文档为准**：要么改代码，要么先改文档再改代码
@@ -508,11 +551,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (94 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (95 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (94 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (95 checks)
 ```

@@ -123,15 +123,49 @@ func _rules(group: String, pointer: String, row: Dictionary, bundle: Dictionary)
 	if not message.is_empty(): return _fail(group, pointer + "/effects", message)
 	return true
 
-## 序章页字段白名单。写错一个字母最难查——那一页会静默地什么都不显示，
-## 所以这里把未知字段直接告警出来。
+## 序章页的字段表：**一行一个字段，值就是这个字段的默认值**。
+##
+## 校验（认不认识这个名字）和拷贝（取出来、给默认值、做转换）**都从这一张表读**。
+##
+## 为什么要这样：以前这两件事写在**两个地方**（白名单 + out.append），
+## 加字段时必须同时改两处——**只改一处就会静默丢数据**：
+## `music` / `sfx` 就这么丢过一次（校验过了、数据没了、音效一个都不响，而测试全绿）。
+##
+## ★ 以后加字段：**只在这里加一行**，校验和拷贝自动跟上。
 const PROLOGUE_FIELDS := {
-	"id": true, "title": true, "body": true, "action": true, "background": true,
-	"visual": true, "choices": true, "hotspots": true, "set": true, "speed": true,
-	"music": true, "sfx": true,
-	"bg": true,
+	"id": "",
+	"title": "",
+	"body": "",
+	"action": "",
+	# 新写法是 background；bg 是旧写法（door / note），留着只为不告警。
+	"background": "door",
+	"bg": "",
+	"visual": {},
+	"choices": [],
+	"hotspots": [],
+	"set": {},
+	"music": {},
+	"sfx": "",
+	"speed": 0.0,
 }
 const PROLOGUE_VISUALS := ["notebook", "profile", "article", "title"]
+
+## 按字段表取一个值。查不到就用表里的默认值，并按默认值的类型做一次转换。
+##
+## 转换规则只有三条，按默认值的类型分派，够用且不用给每个字段写代码：
+##   字典 / 数组 → 深拷贝（页面之间不能共享同一份，改一页会连带改到别人）
+##   浮点        → float()
+##   其余        → str()
+func _field_of(page: Dictionary, key: String) -> Variant:
+	var fallback: Variant = PROLOGUE_FIELDS[key]
+	var value: Variant = page.get(key, fallback)
+	if fallback is Dictionary:
+		return (value as Dictionary).duplicate(true) if value is Dictionary else {}
+	if fallback is Array:
+		return (value as Array).duplicate(true) if value is Array else []
+	if fallback is float:
+		return float(value)
+	return str(value)
 
 ## 把 `prologue.json` 规范化成 bundle.prologue（页数组）。
 ## 序章因此和 actions / cases 一样吃同一套校验与 F6 热重载。
@@ -157,27 +191,14 @@ func _compile_prologue(raw: Variant) -> Array:
 		if not kind.is_empty() and not kind in PROLOGUE_VISUALS:
 			push_warning("prologue.json /pages/%d 的 visual.type「%s」不认得，可用：%s"
 				% [index, kind, ", ".join(PROLOGUE_VISUALS)])
-		var choices: Variant = page.get("choices", [])
-		var hotspots: Variant = page.get("hotspots", [])
-		var changes: Variant = page.get("set", {})
-		out.append({
-			"id": str(page.get("id", "")),
-			"title": str(page.get("title", "")),
-			"body": str(page.get("body", "")),
-			"action": str(page.get("action", "")),
-			# background 是新字段，bg 是旧写法（door / note），两种都认。
-			"background": str(page.get("background", page.get("bg", "door"))),
-			"visual": (visual as Dictionary).duplicate(true) if visual is Dictionary else {},
-			"choices": (choices as Array).duplicate(true) if choices is Array else [],
-			"hotspots": (hotspots as Array).duplicate(true) if hotspots is Array else [],
-			"set": (changes as Dictionary).duplicate(true) if changes is Dictionary else {},
-			# ★ 这两个**必须拷**——只加进 PROLOGUE_FIELDS 白名单是不够的，
-			# 不拷就等于数据被静默丢弃：音乐和音效一个都不会响。
-			"music": (page.get("music", {}) as Dictionary).duplicate(true)
-				if page.get("music", {}) is Dictionary else {},
-			"sfx": page.get("sfx", ""),
-			"speed": float(page.get("speed", 0.0)),
-		})
+		# ★ 拷贝也走同一张表：加字段只改上面的表，这里不用动。
+		var compiled: Dictionary = {}
+		for key in PROLOGUE_FIELDS:
+			compiled[key] = _field_of(page, str(key))
+		# 旧写法 bg 的兜底：background 没给才用它。
+		if str(compiled.background).is_empty():
+			compiled.background = str(page.get("bg", "door"))
+		out.append(compiled)
 	if out.is_empty():
 		_fail("prologue", "", "没有任何有效页")
 	return out
