@@ -15,7 +15,8 @@ extends Control
 ##   · _confirm 产出 modal_rows：0 标题、1 正文、2 确认按钮、3 返回按钮
 ##     （_ask_write 会直接改 2 和 3 的文字）。
 ##   · 小游戏：0 标题、1 小游戏实例、2 返回按钮。
-##   · 调查结果：0 标题、1 正文、2 提交按钮、3 返回按钮（不消耗行动）。
+##   · 调查结果：0 标题、1 正文、2 提交按钮、3 返回按钮（放弃这次调查）。
+##   · 顶栏：header 是「第 N 天」；_next_day 是「进入次日」按钮。
 
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Room = preload("res://scripts/black_page/room.gd")
@@ -50,9 +51,6 @@ const PERSON_STATUS := {"normal": "正常", "missing": "下落不明", "fugitive
 const CASE_STATES := {"active": "调查中", "completed": "已结案"}
 const CASE_RESULTS := {"explained": "真相查清", "partial": "部分查清", "unresolved": "未能查清"}
 const RELIABILITY := {"reliable": "可靠", "dubious": "存疑", "contradictory": "矛盾", "forged": "伪造"}
-## 剩余行动 → 时刻。索引是 actions_left（0..max），
-## 条目数要 ≥ flags.json 的 actions_left.max + 1。
-const DAY_TIMES := ["23:40", "18:40", "14:20", "09:10"]
 
 ## 文字速度档位。**倍率**，不是绝对字/秒——见 _type_scale_index 的注释。
 ## 最后一档不是「很快」而是「不逐字」：乘上去之后一句话基本一帧内就完。
@@ -65,7 +63,7 @@ var shell: Control
 ## HUD 的共同父节点。顶栏／左侧栏／字幕带都挂在它下面，
 ## 于是“收起 HUD”就是切这一个节点——**不需要逐个列举**。
 var _hud_layer: Control
-## 顶栏（黑页／房间 · 第N天 · 剩余行动）。
+## 顶栏（黑页／房间 · 第N天 · 进入次日）。
 ## 留这个引用只为让测试能断言它**确实挂在 hud 层里**（漏挂就会漏收）。
 var _topbar: Control
 var header: Label
@@ -97,7 +95,8 @@ var _speaker: TextureRect
 var _speaker_tween: Tween
 var _rail: VBoxContainer
 var _crumb: Label
-var _pips: HBoxContainer
+## 顶栏右侧的「进入次日」。日子由玩家自己推——房间里这是唯一的推进口。
+var _next_day: Button
 var _menu_layer: Control
 var _menu_panel: VBoxContainer
 var _menu_button: Button
@@ -129,7 +128,7 @@ const HISTORY_CAP := 120
 var _in_room := true
 var _open_panel := ""
 ## 当前弹层是不是「调查进行中的」（小游戏 / 结果确认）。这类弹层后面挂着行动锁，
-## 所以 ESC 不能只把它关掉——要按弹层上的「返回」处理：放弃调查、回房间、不消耗行动。
+## 所以 ESC 不能只把它关掉——要按弹层上的「返回」处理：放弃调查、回房间。
 ## 只关弹层不释放锁的话，玩家会卡在「不能调查、不能存档」的状态里。
 var _investigation_modal := false
 
@@ -310,13 +309,20 @@ func _build_topbar() -> void:
 	row.add_child(header)
 
 	row.add_child(_vsep())
-	var caption := UI.label("剩余行动", UI.SIZE_MICRO, UI.TEXT_MUTE)
-	caption.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(caption)
-	_pips = HBoxContainer.new()
-	_pips.add_theme_constant_override("separation", 5)
-	_pips.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(_pips)
+	# 「进入次日」：没有行动预算这回事了（舍弃行动点，重构文档 §18）——
+	# 日子由玩家自己翻，黑页的账、世界的事件都在这一下结算。
+	_next_day = Button.new()
+	_next_day.text = "进入次日"
+	_next_day.flat = true
+	_next_day.focus_mode = Control.FOCUS_NONE
+	_next_day.add_theme_font_size_override("font_size", UI.SIZE_MICRO)
+	_next_day.add_theme_color_override("font_color", UI.ACCENT)
+	_next_day.add_theme_color_override("font_hover_color", UI.TEXT_BRIGHT)
+	_next_day.add_theme_color_override("font_pressed_color", UI.ACCENT)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		_next_day.add_theme_stylebox_override(state, none)
+	_next_day.pressed.connect(_ask_next_day)
+	row.add_child(_next_day)
 
 func _vsep() -> ColorRect:
 	var sep := ColorRect.new()
@@ -1018,7 +1024,7 @@ func _show_prologue() -> void:
 func _reveal_hud(visible_now: bool) -> void:
 	# 一刀切：HUD 的成员都挂在 _hud_layer 下，切它一个就够了。
 	# 以前是逐个列举 shell / rail / topbar——**漏一个就漏一片**，
-	# 顶栏就是这么在序章里一直露着日期和行动点的。
+	# 顶栏以前就是这么在序章里一直露着日期的。
 	_hud_layer.visible = visible_now
 	# 热区跟着 HUD 一起收：序章演出时点背景不该有反应。
 	if _hotspot_layer != null: _hotspot_layer.visible = visible_now
@@ -1027,11 +1033,9 @@ func _reveal_hud(visible_now: bool) -> void:
 
 func refresh() -> void:
 	if game.bundle.is_empty(): return
-	# 时刻表按 actions_left 取值。数据把每日行动数改得比表长时要夹一下——
-	# 显示成最后一个时刻，总好过整条流程崩在这里。
-	var left: int = clampi(int(game.flag("actions_left")), 0, DAY_TIMES.size() - 1)
-	header.text = "第 %d 天   %s" % [int(game.flag("day")), DAY_TIMES[left]]
-	_refresh_pips()
+	header.text = "第 %d 天" % int(game.flag("day"))
+	# 已经落幕就没有「次日」可进了：入口收起来，别留一个只会报错的按钮。
+	_next_day.visible = str(game.flag("ending")).is_empty()
 	_crumb.text = Scenes.name_of(scene_id)
 	_sync_nav()
 	# 房间空闲时把底部的「当前台词」刷新成最新一条。调查途中不动，免得盖掉正文。
@@ -1042,22 +1046,20 @@ func refresh() -> void:
 	# 系统刷新直接落全文，不走打字机（这不是剧情推进，不需要逐字）。
 	_typer.set_line_now(line)
 
-## 行动点数量跟着数据的声明走（flags.json 的 actions_left.max），不写死：
-## 改每日行动数只动数据；F6 热重载把 max 改大改小，这里也会跟着增减。
-func _refresh_pips() -> void:
-	var total := int(game.bundle.flags.actions_left.get("max", 0))
-	while _pips.get_child_count() > total:
-		var extra := _pips.get_child(_pips.get_child_count() - 1)
-		_pips.remove_child(extra)
-		extra.queue_free()
-	while _pips.get_child_count() < total:
-		var pip := ColorRect.new()
-		pip.custom_minimum_size = Vector2(20, 4)
-		_pips.add_child(pip)
-	var left := int(game.flag("actions_left"))
-	for index in _pips.get_child_count():
-		var pip := _pips.get_child(index) as ColorRect
-		pip.color = UI.ACCENT if index < left else Color(0.4941, 0.6980, 0.7686, 0.18)
+# ── 时间推进 ─────────────────────────────────────────────────────────────
+## 顶栏的「进入次日」。**日子由玩家自己推**（舍弃行动点，重构文档 §18）：
+## 没有预算耗尽这回事，房间不会自己翻页；但黑页的账、外面的事件都在
+## end_day 里结算——这一步不可逆，所以先确认一次。
+func _ask_next_day() -> void:
+	if not game.active_action.is_empty():
+		_message("请先结束当前调查。")
+		return
+	var body := "世界会在夜里结算：外面的变化、还没有传来后果的事。"
+	if not game.pending.is_empty():
+		body = "黑页上写下的名字会在夜里兑现，这一步不能回头。"
+	_confirm("进入次日", "%s确定进入第 %d 天？" % [body, int(game.flag("day")) + 1], func():
+		var error: String = game.end_day()
+		if not error.is_empty(): _message(error))
 
 ## 侧栏高亮跟随「当前打开的是哪个面板」，而不是当前场景。
 ## 同时按「有没有可看的内容」决定条目显不显示——功能跟着剧情长出来，不是开局全摆上。
@@ -1120,7 +1122,7 @@ func _open_minigame(action_id: String) -> void:
 	minigames.run(str(action.minigame), func():
 		# 过期回调（玩家已经退出这一局）不再弹结果页——token 就是这一局的凭据。
 		if token == game.ticket: _show_report.call_deferred(action_id, token))
-	var back := UI.ghost_button("返回（不消耗行动）")
+	var back := UI.ghost_button("返回（放弃这次调查）")
 	back.pressed.connect(_return_to_room)
 	modal_rows.add_child(back)
 	_fit_modal(false)
@@ -1140,16 +1142,16 @@ func _show_report(action_id: String, token: int) -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(UI.narrow(UI.flow(str(action.text), UI.SIZE_BODY, Color("d3e0e7")), 0.24))
 	body.add_child(UI.rule())
-	var warn := UI.flow("记录结果后消耗 1 次行动。返回则不消耗，这次调查作废。", UI.SIZE_MICRO, UI.TEXT_MUTE)
+	var warn := UI.flow("记录结果后收下这次调查。返回则作废——方向还在，可以改天再来。", UI.SIZE_MICRO, UI.TEXT_MUTE)
 	body.add_child(warn)
 	modal_rows.add_child(body)
 	modal_rows.add_child(UI.primary_button("记录结果，返回房间"))
-	modal_rows.add_child(UI.ghost_button("返回（不消耗行动）"))
+	modal_rows.add_child(UI.ghost_button("返回（放弃这次调查）"))
 	modal_rows.get_child(2).pressed.connect(func():
 		var error: String = game.complete_action(token)
 		if not error.is_empty():
 			# 锁还在 ⇒ 还能重试（小游戏没做完），错误就地显示；
-			# 锁没了（回调过期 / 事务中止 / 次日结算失败）⇒ 没有可重试的东西了，
+			# 锁没了（回调过期 / 事务中止）⇒ 没有可重试的东西了，
 			# 回房间；错误跟着字幕带显示，别把人留在一张点不动的结果页上。
 			if game.active_action.is_empty():
 				_enter_room(error)
@@ -1262,17 +1264,17 @@ func _open_case() -> void:
 		if asked == 0: column.add_child(UI.flow("暂时没有新的疑点。", UI.SIZE_SMALL, UI.TEXT_DIM))
 		column.add_child(_label_micro("调查方向"))
 		var listed := 0
-		var left := int(game.flag("actions_left"))
 		for action_id in game.bundle.actions:
 			var action: Dictionary = game.bundle.actions[action_id]
+			# 能走的都摆出来：没有行动预算，就不存在「今天做不了」的方向——
+			# 门槛只剩数据里的 requires（不满足的不显示，不是灰掉）。
 			if action.case != id or not game.available(action_id): continue
 			listed += 1
-			var affordable: bool = left > 0
-			var row := UI.action_row(str(action.name), "1 次行动" if affordable else "今日行动已用完", affordable)
-			if affordable: row.pressed.connect(_investigate.bind(action_id))
+			var row := UI.action_row(str(action.name), "")
+			row.pressed.connect(_investigate.bind(action_id))
 			column.add_child(row)
 		if listed == 0:
-			column.add_child(UI.flow("暂时没有新的方向。可以等消息，或打开黑页作出决定。", UI.SIZE_SMALL, UI.TEXT_DIM))
+			column.add_child(UI.flow("暂时没有新的方向。可以先打开黑页作出决定，或进入次日看看。", UI.SIZE_SMALL, UI.TEXT_DIM))
 		modal_rows.add_child(column)
 	if found == 0:
 		modal_rows.add_child(UI.flow("还没有接触到任何案件。", UI.SIZE_BODY, UI.TEXT_DIM))

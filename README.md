@@ -84,10 +84,10 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 
 ```bash
 python tools/audit.py                                            # 期望 exit 0
-godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (216 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (223 checks)
 ```
 
-⚠️ **验收标准是 `PASS (216 checks)` 这个完整字符串，不是「看到 PASS」。**
+⚠️ **验收标准是 `PASS (223 checks)` 这个完整字符串，不是「看到 PASS」。**
 测试只在 `failures == 0` 时报 PASS；一旦有解析错误，后面的检查全部不执行，
 failures 仍是 0 → **假 PASS**。改了测试要同步更新这个数字，以及
 `docs/ARCHITECTURE.md` 里对应的说法。

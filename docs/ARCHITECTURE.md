@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 216 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 223 项测试。
 
 ---
 
@@ -124,10 +124,10 @@
 | 文件 | 职责 | 关键约束 |
 | --- | --- | --- |
 | `main.gd` | 主界面。场景切换、底部对话、中央选项、侧栏、弹层、转场、输入分发 | 只调 `game.xxx()`；不读数据文件 |
-| `investigation.gd` | **游戏逻辑中枢**。行动可用性、结算、落笔、结束一天、结局判定 | **唯一允许写 `GameState` 的地方** |
+| `investigation.gd` | **游戏逻辑中枢**。调查行动编排、结算、落笔、时间推进（进入次日）、结局判定 | **唯一允许写 `GameState` 的地方** |
 | `data_loader.gd` | 编译 `data/black_page/*.json` → `bundle`；字段校验 + 跨文件引用检查 + 规范化 | 加数据文件必须同时改这里的加载列表 |
 | `performance_director.gd` | **演出导演**（表现层）。把 `sequences.json` 的时间轴演出来；自带幕布/闪白叠层与镜头震动 | 动作表 `ACTIONS` 是校验和执行共用的那一张表；`done` 保证被调且只调一次 |
-| `minigame_manager.gd` | **小游戏经理**（表现层）。把 `minigames.json` 里的场景装进弹层、等打完、把结果落进状态、把场景卸掉 | 不认识任何具体小游戏，也不认识「行动点」；结果写状态走 `game.note_minigame()`；`done` 保证被调且只调一次 |
+| `minigame_manager.gd` | **小游戏经理**（表现层）。把 `minigames.json` 里的场景装进弹层、等打完、把结果落进状态、把场景卸掉 | 不认识任何具体小游戏，也不认识「调查」；结果写状态走 `game.note_minigame()`；`done` 保证被调且只调一次 |
 | `ui_style.gd` | 视觉令牌 + 控件工厂。所有 UI 构件从这儿造 | 颜色/字号/间距只在这里定义 |
 | `scenes.gd` | 场景表：场景 id → 名称 + 贴图 | 加场景要同时配 `transitions.json` |
 | `hotspots.gd` | 房间背景上的可点热区（UV 比例表） | UV→屏幕换算在 `core/hotspot_layer.gd`；`target` 必须能在 `main._hotspot_pressed` 里找到分支 |
@@ -192,7 +192,7 @@
 
 | 通用（换游戏也能用） | 业务（绑死黑页） |
 | --- | --- |
-| `core/rules.gd` 条件求值 | `investigation.gd` 三次行动 / 落笔 / 侵蚀度 |
+| `core/rules.gd` 条件求值 | `investigation.gd` 调查编排 / 落笔 / 侵蚀度 |
 | `core/json_source.gd` JSON + 行号 | `ui_style.gd` 颜色字号（这是黑页的视觉语言） |
 | `core/save_store.gd` 存档读写 | `scenes.gd` 场景表 |
 | `core/save_manager.gd` 存档打包与校验 | `hotspots.gd` 的热区表 |
@@ -289,7 +289,7 @@ data/black_page/*.json
 | `complete_action(token)` | 结算行动 | **必须带发起时的 token**；小游戏类行动读 `minigame.<id>.type` 判通过；失败也要放行动锁（见七.3） |
 | `note_minigame(id, result)` | 记录一局小游戏的结果 | 小游戏经理打完 / 被打断时调；归一化成 `{type, score, data}` 后写进状态（见八） |
 | `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
-| `end_day()` | 结束一天，兑现所有 pending | 事务式，失败则状态零变化 |
+| `end_day()` | 玩家**进入次日**：兑现所有 pending、天数 +1、跑定时事件 | 事务式，失败则状态零变化；**唯一的时间推进口**，顶栏「进入次日」走它 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
 | `unlock_person(id)` / `unlock_person_info(id, field)` | 认识一个人 / 解锁一条图鉴档案 | 剧情 `unlock` / `unlockinfo` 指令走这两个；重复执行无害，解锁后自动记 `codex_new`（见七.4） |
 | `mark_codex_read(id)` | 清掉这个人的「有新档案」标记 | 打开单人图鉴页时调 |
@@ -324,7 +324,7 @@ ui.<key>                       ← 侧栏入口是否点亮
 
 ### 结算核心 flag 的类型锁死
 
-`day` / `actions_left` / `writes` / `wrong_writes` / `erosion` = `int`，
+`day` / `writes` / `wrong_writes` / `erosion` = `int`，
 `decision` / `ending` = `string`。改类型会被 `data_loader` 拒绝。
 
 ### 文件清单
@@ -428,12 +428,17 @@ person.<id>.codex_new       有新内容（打开单人页时清掉）
 ### 游戏循环
 
 ```
-一天 = 行动预算次调查（预算 = flags.json 的 actions_left.max，本切片 3 次）
+一天 = 想查几次查几次（**没有行动点**——重构文档 §18：剧情节点 / 线索条件 /
+      调查完成度驱动案件，而不是预算）
 选调查方向（不满足 requires 的方向**不显示**，不是灰掉）
   → 场景整张切换 → 正文逐句读 → **读完即提交，无取消**（「读 = 代价」）
-  → 扣行动、拿线索、跑 effects
-行动归零 → 自动 end_day()；新的一天预算回到 max
+  → 拿线索、跑 effects
+玩家自己决定何时收尾：顶栏「进入次日」→ 确认 → end_day()（唯一的时间推进口）
 ```
+
+时间压力不靠预算，靠**数据里的时限事件**：`events.json` 的 `requires` 写
+`day >= N` / 人物状态，到点就把路线换掉（本切片：`deadline` / `broken` 把
+`testimony` 换成打捞路线 `fallback`）。
 
 **落笔 = 延迟结算**：`write_name` 只往 `pending` 队列塞记录，当场世界不变；
 `end_day` 才兑现——写对（`identity == 100`）→ 目标 `status=dead`、`writes+1`、`erosion+1`、跑 `death_effects`；
@@ -500,7 +505,7 @@ person.<id>.codex_new       有新内容（打开单人页时清掉）
 | 玩家能做的事 | 没有——纯读 | **有**——点热区、做选择 | 没有——走向由指令自己定 |
 | 内容粒度 | 句子（只有文字 + 说话人） | 页（文字+素材+交互+音乐+状态写入） | 指令步（说 / 写状态 / 给线索 / 条件跳转） |
 | 作者写的形状 | — | 一页一页的画面 | 先做什么、再做什么 |
-| 读完之后 | **绑定结算**（扣行动，回房间） | 发 `finished`，去哪由调用方定 | 发 `finished`，去哪由调用方定 |
+| 读完之后 | **绑定结算**（提交调查、回房间） | 发 `finished`，去哪由调用方定 | 发 `finished`，去哪由调用方定 |
 | 数据 | — | `prologue.json` | `stories.json` |
 
 **选择规则（一句话）**：
@@ -675,7 +680,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 216 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 223 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -685,7 +690,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (216 checks)
+# 期望输出：BLACK_PAGE: PASS (223 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -694,9 +699,9 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
-测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 212），
+测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 219），
 改测试时让它贴着当前数。
-**验收标准是 `PASS (216 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (223 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -745,7 +750,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | --- | --- |
 | `UI.box()` 返回 **StyleBox 不是节点** | 要面板得 `PanelContainer.new()` + `add_stylebox_override("panel", UI.box(...))` |
 | `game.flag()` 返回 `Variant` | 不能用 `:=` 推类型，要写成 `var x: bool = not bool(game.flag(...))` |
-| 每日行动数由数据声明 | `flags.json` 的 `actions_left`：`default` 必须 = `max`（`data_loader` 会拦）；`end_day` 与顶栏行动点都按 `max` 走。改次数还要给 `main.gd` 的 `DAY_TIMES` 加条目（条目数 ≥ max + 1） |
+| 日子只由 `end_day()` 推 | **没有任何地方会自动跳日**：调查不推进时间，`complete_action` 也不碰 `day`。唯一出口是顶栏「进入次日」（`main._ask_next_day` → 确认 → `game.end_day()`）。数据里要时限就用 `events.json` 的 `requires: day >= N`，别在代码里加计时 |
 | `_apply()` 与 `GameState.apply` 有重复 | 事务模式造成的（一个只改副本、一个改完即提交），可接受，但别让它们跑偏 |
 | 精灵图路径是**动态拼**的 | `"black_page_portrait_%s%s.png"`——静态扫描会误判为「没人用」 |
 
@@ -822,11 +827,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (216 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (223 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (216 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (223 checks)
 ```

@@ -45,16 +45,15 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 		if not message.is_empty():
 			_fail("flags", "/" + id, message)
 			return {}
-	for id in {"day": "int", "actions_left": "int", "writes": "int", "wrong_writes": "int", "erosion": "int", "decision": "string", "ending": "string"}:
+	for id in {"day": "int", "writes": "int", "wrong_writes": "int", "erosion": "int", "decision": "string", "ending": "string"}:
 		var expected: String = "string" if id in ["decision", "ending"] else "int"
 		if not result.flags.has(id) or result.flags[id].get("type") != expected:
 			_fail("flags", "/" + id, "缺少或修改了结算核心 Flag 类型：" + id)
 			return {}
-	# 每日行动数从数据读（end_day 按 max 恢复预算），但要求「新的一天是满的」：
-	# default 必须等于 max。本切片为 3；改次数就改 flags.json——
-	# 顶栏的时段表 DAY_TIMES 条目数要跟着 ≥ max + 1。
-	if result.flags.actions_left.get("max") == null or result.flags.actions_left.default != result.flags.actions_left.max or result.flags.day.default != 1:
-		_fail("flags", "", "actions_left 的 default 必须等于 max、day 从 1 开始（本切片每日 3 次行动）")
+	# 日子由玩家自己推（舍弃行动点，重构文档 §18），没有每日预算要跟数据对账；
+	# 只剩一个默认值要守：第一天是「第 1 天」。
+	if result.flags.day.default != 1:
+		_fail("flags", "", "day 必须从 1 开始")
 		return {}
 	for id in result.clues:
 		result.catalog.items[id] = {"name": str(id), "max_stack": 1}

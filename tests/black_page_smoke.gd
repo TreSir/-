@@ -14,7 +14,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 212
+const UI_CHECK_FLOOR := 219
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -73,9 +73,11 @@ func identity_route() -> void:
 	check(game.person_flag("zhou", "identity") == 70, "initial identity")
 	act("archive")
 	check(game.person_flag("zhou", "identity") == 52 and game.flag("clue.badge.reliability") == "forged", "contradictory evidence lowers identity")
-	check(game.flag("day") == 2 and game.flag("actions_left") == 3, "third action automatically settles day")
 	act("photo")
 	check(game.person_name("zhou") == "周文远" and game.person_flag("zhou", "truth") == 15, "identity independent of truth")
+	# 没有每日行动预算（舍弃行动点，重构文档 §18）：同一天想查几次查几次，
+	# 时间也不会自己走——日子由玩家在顶栏自己推。
+	check(game.flag("day") == 1, "investigations never advance the day")
 
 func _run() -> void:
 	add_child(game)
@@ -123,6 +125,10 @@ func _run() -> void:
 	act("testimony")
 	check(game.clue_description("testimony") == game.bundle.clues.testimony.description,
 			"uninterrupted route keeps the base clue body")
+	# 首章落幕要「至少进入第 2 天」：日子由玩家自己推，restore 把日子拉回了第 1 天，
+	# 所以先验闸门拦得住，再自己推一天。
+	check(not game.finish_case("seal").is_empty(), "the chapter cannot end before the first night")
+	check(game.end_day().is_empty() and game.flag("day") == 2, "the day only turns when the player ends it")
 	var full_checkpoint: Dictionary = game.snapshot()
 	check(game.finish_case("seal").is_empty() and game.flag("ending") == "closed", "abstain and next-day ending")
 	game.restore(full_checkpoint)
@@ -145,6 +151,9 @@ func _run() -> void:
 	act("archive_public")
 	check(game.owns("archive") and game.available("photo"), "public records keep identity route open")
 	game.restore(identity_checkpoint)
+	# 时限事件在「进入第 4 天」的夜间结算里兑现（events.json 的 deadline）：
+	# 日子得由玩家一天天推过去——从第 1 天推三次。
+	game.end_day()
 	game.end_day()
 	game.end_day()
 	check(not game.available("testimony") and game.available("fallback"), "missed deadline preserves route")
@@ -263,6 +272,8 @@ func _run() -> void:
 	act("camera")
 	act("badge")
 	act("archive")
+	# 落幕要「至少进入第 2 天」：日子不再自己走，玩家先推一天。
+	check(game.end_day().is_empty(), "the player ends the first day")
 	check(game.finish_case("seal").is_empty() and game.flag("case.missing.state") == "completed"
 			and game.flag("case.missing.result") == "unresolved",
 		"finishing the chapter closes the running case with the fallback outcome")
@@ -518,7 +529,7 @@ func _ui() -> void:
 	await get_tree().create_timer(0.6).timeout
 	check(is_instance_valid(ui.scripted) and not ui._hud_layer.visible, "opening scripted gates investigation hub")
 	# HUD 的成员**必须都挂在 _hud_layer 下**：显隐是一刀切的（只切这一个节点），
-	# 挂在别处就不会跟着收——顶栏以前就是这么在序章里一直露着日期和行动点的。
+	# 挂在别处就不会跟着收——顶栏以前就是这么在序章里一直露着日期的。
 	# 这条断言守的是**结构**，不是某个节点的 visible 值。
 	check(ui.shell.get_parent() == ui._hud_layer
 			and ui._topbar.get_parent() == ui._hud_layer
@@ -625,10 +636,10 @@ func _ui() -> void:
 	check(ui.game.flag("case.missing.state") == "active" and ui.game.flag("case.missing.result") == "",
 		"the opening story activates the case through a data effect")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
-	# 顶栏行动点跟着数据声明走（flags.json 的 actions_left.max），不是写死的 3——
-	# 改每日行动数只动数据，这里会跟着增减。
-	check(ui._pips.get_child_count() == int(ui.game.bundle.flags.actions_left.max),
-			"action pips follow the declared daily max")
+	# 顶栏不再有行动点（舍弃行动点，重构文档 §18）：右侧是「进入次日」，
+	# 时间唯一的推进口。点击流程放在界面测试末尾验（这里先验它摆出来了）。
+	check(is_instance_valid(ui._next_day) and ui._next_day.visible and ui._next_day.text.contains("次日"),
+			"the top bar offers the only way to turn the page")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
@@ -736,7 +747,7 @@ func _ui() -> void:
 		"the played result lands in the state before the report shows")
 	check(ui.modal_rows.get_child_count() == 4, "a finished minigame shows the report page")
 	ui.modal_rows.get_child(2).pressed.emit()
-	check(ui.game.owns("camera") and ui.game.flag("actions_left") == 2 and not ui.modal.visible, "UI minigame reward once and return")
+	check(ui.game.owns("camera") and ui.game.flag("day") == 1 and not ui.modal.visible, "UI minigame reward once and return")
 	await get_tree().process_frame
 
 	# 图鉴跟着线索长：查过监控 = 认识了这个男人 + 两条档案解锁；
@@ -767,7 +778,7 @@ func _ui() -> void:
 		_click_at(ui, Vector2(200, 200))
 		await get_tree().create_timer(0.12).timeout
 		guard += 1
-	check(ui.scene_id == "room" and ui.game.flag("actions_left") == 1, "reading the report settles the action and returns to the room")
+	check(ui.scene_id == "room" and ui.game.owns("badge") and ui.game.flag("day") == 1, "reading the report settles the action and returns to the room")
 
 	# ── 行动锁不许在任何「退出路径」上漏掉 ─────────────────────────────────
 	# 锁（game.active_action）不释放，玩家就卡在「不能开始新调查、不能存档、
@@ -782,11 +793,12 @@ func _ui() -> void:
 	await get_tree().process_frame
 	check(ui.game.active_action.is_empty() and not ui.modal.visible and ui.scene_id == "room",
 		"ESC on an investigation modal releases the lock and returns to the room")
-	check(ui.game.flag("actions_left") == 3, "abandoning an investigation spends no action")
+	check(ui.game.flag("day") == 1 and ui.game.available("camera"),
+		"abandoning an investigation advances no time and keeps the route")
 	# 打断的那一局也要留痕：记 cancelled——剧情 / 结算用 if 查得到「玩家退出了」。
 	check(str(ui.game.flag("minigame.monitor_rebuild.type")) == "cancelled" and not ui.minigames.busy(),
 		"an abandoned minigame is recorded as cancelled")
-	# 结果页上的「返回」：小游戏已经通过，也可以不记账就走——不消耗行动、不发线索。
+	# 结果页上的「返回」：小游戏已经通过，也可以不记账就走——不发线索、方向不标记完成。
 	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the report check")
 	ui._open_minigame("camera")
 	await get_tree().process_frame
@@ -798,9 +810,9 @@ func _ui() -> void:
 		"a passed minigame records its result and shows the report")
 	ui.modal_rows.get_child(3).pressed.emit()
 	await get_tree().process_frame
-	check(ui.game.active_action.is_empty() and ui.game.flag("actions_left") == 3
-			and not ui.game.owns("camera") and not ui.modal.visible,
-		"backing out of the report releases the lock without spending an action")
+	check(ui.game.active_action.is_empty() and not ui.game.owns("camera") and not ui.modal.visible
+			and ui.game.available("camera"),
+		"backing out of the report releases the lock without taking the reward")
 	# 菜单的「回到房间」
 	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the menu check")
 	ui._return_to_room()
@@ -815,4 +827,21 @@ func _ui() -> void:
 	await get_tree().create_timer(0.9).timeout
 	check(ui.game.active_action.is_empty() and ui.scene_id == "room" and not ui.modal.visible,
 		"closing the notebook mid-investigation returns to the room and releases the lock")
+
+	# ── 顶栏「进入次日」：时间唯一的推进口 ─────────────────────────────────
+	# 没有行动预算了（舍弃行动点，重构文档 §18），房间不会自己翻页——
+	# 这一步必须由玩家按，而且按之前要确认（黑页的账在夜里兑现，不可逆）。
+	check(ui._next_day.visible and int(ui.game.flag("day")) == 1, "the day-end button waits in the top bar")
+	_click_at(ui, ui._next_day.get_global_rect().get_center())
+	await get_tree().process_frame
+	check(ui.modal.visible and ui.modal_rows.get_child_count() == 4, "turning the page asks for confirmation first")
+	ui.modal_rows.get_child(3).pressed.emit()
+	await get_tree().process_frame
+	check(not ui.modal.visible and int(ui.game.flag("day")) == 1, "backing out leaves the day untouched")
+	_click_at(ui, ui._next_day.get_global_rect().get_center())
+	await get_tree().process_frame
+	ui.modal_rows.get_child(2).pressed.emit()
+	await get_tree().process_frame
+	check(int(ui.game.flag("day")) == 2 and ui.header.text.contains("第 2 天") and not ui.modal.visible,
+		"confirming turns the page to the next day")
 	ui.free()

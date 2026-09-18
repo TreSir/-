@@ -222,7 +222,6 @@ func available(id: String) -> bool:
 func begin_action(id: String) -> String:
 	if not active_action.is_empty(): return "请先结束当前调查。"
 	if not available(id): return "这条调查方向已经不可用。"
-	if flag("actions_left") <= 0: return "今天已经没有调查行动。"
 	active_action = id
 	ticket += 1
 	return ""
@@ -255,7 +254,6 @@ func complete_action(token: int) -> String:
 			gained.append(bundle.clues[clue].name)
 	_apply(candidate, action.get("effects", {}))
 	candidate.flags["action." + id + ".done"] = true
-	candidate.flags.actions_left -= 1
 	var error: String = GameState.validate_snapshot(candidate)
 	if not error.is_empty():
 		# 事务回滚（什么都没写），但锁要放——不然一条坏数据能把整局锁死。
@@ -264,15 +262,9 @@ func complete_action(token: int) -> String:
 	GameState.restore(candidate)
 	cancel_action()
 	_log(action.text + ("\n获得线索：" + "、".join(gained) if not gained.is_empty() else ""))
-	var day_error := ""
-	if flag("actions_left") == 0:
-		# 行动点用尽自动进次日。次日结算失败必须往上报：
-		# 只写日志的话，玩家会停在「0 次行动、日子也不前进」的死角里，
-		# 而且看不出发生了什么。
-		day_error = end_day()
-		if not day_error.is_empty(): _log(day_error)
+	# 调查不推进时间：日子由玩家在顶栏自己翻（舍弃行动点，重构文档 §18）。
 	changed.emit()
-	return day_error
+	return ""
 
 func can_write(id: String) -> bool:
 	if not bundle.people.has(id) or not active_action.is_empty() or flag("ending") != "": return false
@@ -288,6 +280,9 @@ func write_name(id: String) -> String:
 	changed.emit()
 	return ""
 
+## 结束今天：兑现落笔（死亡 / 划痕）、天数 +1、跑定时事件。
+## **日子由玩家自己推**（顶栏的「进入次日」）——没有行动预算、也没有自动跳日，
+## 所以这里是唯一的推进入口，守卫（调查进行中 / 已落幕）都留在这里。
 func end_day() -> String:
 	if not active_action.is_empty() or flag("ending") != "": return "当前不能结束一天。"
 	var candidate := GameState.snapshot()
@@ -303,7 +298,6 @@ func end_day() -> String:
 			candidate.flags.wrong_writes += 1
 			messages.append("黑页上的「%s」被一道细痕划掉。\n没有相关死亡消息。那道痕迹却留在纸上。" % entry.name)
 	candidate.flags.day += 1
-	candidate.flags.actions_left = int(bundle.flags.actions_left.max)
 	for id in bundle.events:
 		var event: Dictionary = bundle.events[id]
 		if not candidate.flags["event." + id + ".done"] and Rules.matches(event.get("requires", []), candidate.flags, candidate.inventory):
