@@ -35,5 +35,18 @@
         ]
       }
     }
+  },
+  "ink_written": {
+    "name": "落笔",
+    "start": "ink",
+    "nodes": {
+      "ink": {
+        "steps": [
+          {
+            "sequence": "ink_settles"
+          }
+        ]
+      }
+    }
   }
 }

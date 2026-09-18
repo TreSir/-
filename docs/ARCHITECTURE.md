@@ -119,13 +119,14 @@
 
 ## 三、目录与职责
 
-### `scripts/black_page/` —— 黑页自己（12 个）
+### `scripts/black_page/` —— 黑页自己（13 个）
 
 | 文件 | 职责 | 关键约束 |
 | --- | --- | --- |
 | `main.gd` | 主界面。场景切换、底部对话、中央选项、侧栏、弹层、转场、输入分发 | 只调 `game.xxx()`；不读数据文件 |
 | `investigation.gd` | **游戏逻辑中枢**。行动可用性、结算、落笔、结束一天、结局判定 | **唯一允许写 `GameState` 的地方** |
 | `data_loader.gd` | 编译 `data/black_page/*.json` → `bundle`；字段校验 + 跨文件引用检查 + 规范化 | 加数据文件必须同时改这里的加载列表 |
+| `performance_director.gd` | **演出导演**（表现层）。把 `sequences.json` 的时间轴演出来；自带幕布/闪白叠层与镜头震动 | 动作表 `ACTIONS` 是校验和执行共用的那一张表；`done` 保证被调且只调一次 |
 | `ui_style.gd` | 视觉令牌 + 控件工厂。所有 UI 构件从这儿造 | 颜色/字号/间距只在这里定义 |
 | `scenes.gd` | 场景表：场景 id → 名称 + 贴图 | 加场景要同时配 `transitions.json` |
 | `hotspots.gd` | 房间背景上的可点热区（UV 比例表） | UV→屏幕换算在 `core/hotspot_layer.gd`；`target` 必须能在 `main._hotspot_pressed` 里找到分支 |
@@ -160,7 +161,7 @@
 | `save_manager.gd` | **存档的形状**：打包 / 校验 / 写读。静态函数，不持有状态——「什么时候能存」是 investigation 的规矩 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
 | `scripted.gd` | **页数组剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
-| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto`；表现回调由调用方注入 |
+| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto` / `sequence`；表现与演出回调都由调用方注入 |
 | `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
 | `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
 | `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
@@ -169,8 +170,11 @@
 > 写状态走 `game.apply_state()`——引擎本身不认识「序章」这个词。
 >
 > `narrative_runner.gd` 同理：剧情从 `game.bundle.stories` 读，台词怎么演由注入的
-> `display` 回调决定，状态写入走 `game.apply_effects()` / `add_clue()` / `apply_state()`。
-> **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）。
+> `display` 回调决定，状态写入走 `game.apply_effects()` / `add_clue()` / `apply_state()`；
+> `sequence` 指令交给注入的 `performer` 回调（`performance_director.gd` 的 `play`），
+> **演完回调才放行**——剧情就这么等待一段重点演出。
+> **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）；
+> 演出动作表 `ACTIONS` 同理（`data_loader` 照着它查 `sequences.json`）。
 
 ---
 
@@ -238,6 +242,7 @@ data/black_page/*.json
       ├──▶ investigation.gd    （读 bundle 判断与结算）
       ├──▶ core/scripted.gd    （页数组剧本引擎；序章由 main 注入 bundle.prologue 后开演）
       ├──▶ core/narrative_runner.gd （指令流剧情；main 注入 game 与表现回调后开播）
+      │       └─▶ performance_director.gd （sequence 指令交给它演；演完回调，剧情继续）
       └──▶ main.gd             （读 bundle 画界面）
       │
       ▼
@@ -322,7 +327,8 @@ ui.<key>                       ← 侧栏入口是否点亮
 | `codex.json` | 人物图鉴的档案条目（每条带 `at` 阈值） |
 | `transitions.json` | 转场（`cut` / `fade` / `slide`；优先级 **单条行动 > 目标场景 > 全局默认**） |
 | `prologue.json` | 序章剧本（页数组：背景 / 卡片 / 热区 / 选项） |
-| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转） |
+| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出） |
+| `sequences.json` | 重点演出的时间轴（`at` 打点 + 一条动作：音效 / 音乐 / 淡入淡出 / 震动 / 闪白 / 等待） |
 
 ---
 
@@ -484,6 +490,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 | `unlock` | 人物 id | 点亮人物（`person.<id>.discovered = true`） |
 | `if` | `{requires, then, else?}` | 条件成立跳 `then`；不成立跳 `else`（没写就继续下一步） |
 | `goto` | 节点名 | 无条件跳 |
+| `sequence` | 演出 id（`sequences.json` 的键） | **重点演出**：交给演出导演演，演完继续下一步（见下） |
 
 **没有 `end` 指令**：节点跑完 = 剧情结束，发 `finished`。
 
@@ -497,6 +504,46 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - **`effect` 写在 `say` 之前**：读到一半退出、读档回来时「已播过」已经记下了，
   不会把整段再重播一遍。
 - `goto` 成环不可怕：执行器有步数上限（到顶告警收尾），有测试守着。
+
+### 重点演出（sequences.json + 演出导演）
+
+普通剧情走**命令流**（「发生什么」），高张力场面走**时间轴**（「什么时候发生、哪些事同时发生」）。
+两者结合，不是二选一：`sequence` 指令就是接缝。
+
+一段演出 = `sequences.json` 里的一个对象，`steps` 每步**一个 `at` 时刻 + 一条动作**：
+
+```json
+"ink_settles": {
+  "name": "墨迹落下",
+  "steps": [
+    { "at": 0.0,  "sfx": "res://assets/audio/sfx_impact.wav" },
+    { "at": 0.0,  "shake": 0.5 },
+    { "at": 0.06, "flash": 0.2 },
+    { "at": 0.75, "wait": 0.35 }
+  ]
+}
+```
+
+| 动作 | 参数 | 做什么 |
+| --- | --- | --- |
+| `sfx` | 音效路径 | 播一次音效 |
+| `bgm` | 曲目路径 / `""` | 换背景音乐；`""` = 淡出停止 |
+| `fade_in` / `fade_out` | 秒数 | 幕布淡入（看清画面）/ 淡出（黑屏） |
+| `shake` | 秒数 | 镜头震动（主界面整体位移，衰减归位） |
+| `flash` | 秒数 | 闪白（快起慢落） |
+| `wait` | 秒数 | 纯等待（排后续节拍用） |
+
+几条约定：
+
+- **动作名就是导演的 `ACTIONS` 表**，`data_loader` 照着它校验——写错动作名在编译期报出来。
+  加一种动作 = **改 `ACTIONS` 一处**（外加 `_act` 里实现它）。
+- **演出必须「演完回调」**：`done` 保证被调用且**只调一次**——正常演完调；
+  被下一场演出打断、或被 `stop()` 收掉也调（打断也算演完）。
+  剧情执行器就挂在这个回调上等待，**不会卡死**。
+- **被打断不留残影**：收场时幕布、闪白、界面位移全部归位
+  （踩过的坑：一次被打断的淡出会把人留在全黑屏幕前）。
+- **界面上没有导演就直接跳**：没注入 `performer` 时执行器告警并继续——演出是**装饰**，不挡剧情。
+- 打点时刻是**相对本段开头**的秒数；`at: 0` 可以多条同时发生（那正是时间轴的意义）。
 
 ---
 
@@ -531,7 +578,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 122 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 134 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -541,7 +588,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (122 checks)
+# 期望输出：BLACK_PAGE: PASS (134 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -551,7 +598,7 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
 测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败），改测试时让它贴着当前数。
-**验收标准是 `PASS (122 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (134 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -617,6 +664,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | --- | --- | --- |
 | 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
 | 一段指令流剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
+| 一段重点演出（时间轴打点） | `data/black_page/sequences.json` + 在 `stories.json` 里用 `sequence` 指令引用 | ✓ 动作名与素材引用在编译期校验 |
 | 一条调查方向 | `actions.json` | ✓ 引用校验 |
 | 一条线索 / 一个人 / 一个案件 / 一个结局 / 一个事件 | 对应的 JSON | ✓ 跨文件引用校验 |
 | 一条人物档案条目 | `codex.json` | ✓ |
@@ -629,6 +677,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | --- | --- | --- | --- |
 | **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
 | **一种剧情指令** | `core/narrative_runner.gd` 的 **`COMMANDS` 表 + `_run` 的 match** | **1 处**（校验读同一张表） | ✓ 未知指令在编译期报错 |
+| **一种演出动作** | `performance_director.gd` 的 **`ACTIONS` 表 + `_act` 的 match** | **1 处**（校验读同一张表） | ✓ 未知动作在编译期报错 |
 | 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
@@ -651,6 +700,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 
 同一课后来用在剧情指令上：`data_loader` 校验指令名时**直接读执行器的 `COMMANDS` 表**，
 不自己抄一份——抄一份就会重演「数据写了、引擎不认识」。
+演出动作同理（校验 `sequences.json` 时读导演的 `ACTIONS` 表）。
 
 ---
 
@@ -669,11 +719,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (122 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (134 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (122 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (134 checks)
 ```

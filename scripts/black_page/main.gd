@@ -25,6 +25,8 @@ const Runner = preload("res://scripts/core/narrative_runner.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
+## 演出导演：重点场面的时间轴演出（震屏 / 闪白 / 幕布 / 音效）。
+const Director = preload("res://scripts/black_page/performance_director.gd")
 ## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
 const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
@@ -69,6 +71,8 @@ var launch: Launch
 var rain: RainAmbience
 var music: BgmPlayer
 var sfx: SfxPlayer
+## 演出导演（重点场面的时间轴演出）。剧情里的 sequence 指令由它演。
+var director: Director
 var rain_muted := false
 var music_muted := false
 var sfx_muted := false
@@ -197,6 +201,14 @@ func _build() -> void:
 
 	_build_menu()
 	_build_modal()
+
+	# 演出导演：挂在自己身上——震屏 = 整屏都在抖。自带的遮罩后加，
+	# 所以盖在 _build 搭好的界面（HUD / 菜单 / 弹层）之上。
+	# 音效和音乐播放器在 _show_launch 里才建出来，届时回填引用。
+	director = Director.new()
+	director.name = "PerformanceDirector"
+	add_child(director)
+	director.attach(self)
 
 ## 左侧栏：案件 / 人物 / 线索 / 黑页 是四个**独立的系统功能**，常驻在此，随时可点开。
 ## 存档/读取/重开/雨声/音乐收在最下面的 ☰。
@@ -612,6 +624,9 @@ func _advance_story() -> void:
 func _settle_into_room() -> void:
 	_close_menu()
 	_close_modal()
+	# 回房间前把没演完的演出收掉：幕布 / 闪光 / 震屏都要归位，
+	# 否则一次被打断的淡出会把人留在全黑屏幕前。等它的人也会被放行。
+	if is_instance_valid(director): director.stop()
 	# 从「黑页时刻」回来，音乐拿回来（没淡出过的话 play_track 自己会早退）。
 	if is_instance_valid(music): music.play_track(AudioTracks.MUSIC_GAME)
 	_in_room = true
@@ -643,14 +658,26 @@ func _reveal_game() -> void:
 ## 用指令流剧情播一段。执行器不认识 UI——
 ## 台词怎么演由 `_say` 负责（display 回调），状态写入由 game 把关，
 ## 界面在这里只是个「接线员」，自己不碰数据、不碰状态。
-func _play_story(story_id: String) -> void:
+##
+## `done` 在**演完或开不了播**时调用（保证恰好一次），调用方不用自己分辨
+## 「同步演完 / 中途要等 / 数据没加载」这些边角——传进来就一定会被叫到。
+func _play_story(story_id: String, done: Callable = Callable()) -> void:
 	if not is_instance_valid(story):
 		story = Runner.new()
 		story.game = game
-		story.display = func(lines: Array, done: Callable): _say(lines, done)
+		story.display = func(lines: Array, next: Callable): _say(lines, next)
+		story.performer = Callable(director, "play")
 		story.finished.connect(refresh)
 	var error: String = story.play(story_id)
-	if not error.is_empty(): push_warning("剧情「%s」没播起来：%s" % [story_id, error])
+	if not error.is_empty():
+		push_warning("剧情「%s」没播起来：%s" % [story_id, error])
+		if done.is_valid(): done.call()
+		return
+	if not story.busy():
+		# 整段都是同步步（没有要等的台词 / 演出），已经演完了。
+		if done.is_valid(): done.call()
+		return
+	if done.is_valid(): story.finished.connect(done, CONNECT_ONE_SHOT)
 
 ## 把最近一条叙述性日志当成「当前台词」。
 func _latest_line() -> String:
@@ -884,6 +911,10 @@ func _show_launch() -> void:
 		sfx = SfxPlayer.new()
 		sfx.name = "SfxPlayer"
 		add_child(sfx)
+	# 导演在这里拿到两个播放器——它俩都是这一处建的，绑定跟着创建点走。
+	if is_instance_valid(director):
+		director.sfx = sfx
+		director.music = music
 	launch = Launch.new()
 	launch.name = "Launch"
 	launch.can_continue = game.has_save()
@@ -1438,7 +1469,14 @@ func _ask_write(id: String) -> void:
 	_confirm("写下「%s」" % game.person_name(id), "一旦写下，无法撤销。\n后果不会立刻出现。", func():
 		# 错误要交给 _enter_room 的 note_error 收口：先 _enter_room 再 _message 的话，
 		# 提示会被转场后的台词盖掉。
-		_enter_room(game.write_name(id)))
+		var error: String = game.write_name(id)
+		if error.is_empty():
+			# 落笔那一瞬走一段演出（stories.json 的 ink_written）。
+			# 演完才回房间——立刻 _enter_room 的话，「后果还没传来」的安静
+			# 会被转场和台词盖掉，这一下就白写了。
+			_play_story("ink_written", func(): _enter_room(""))
+		else:
+			_enter_room(error))
 	modal_rows.get_child(2).text = "落笔"
 	modal_rows.get_child(3).text = "合上笔记"
 

@@ -16,7 +16,7 @@ signal finished
 ## 执行器认识的指令集合。**data_loader 的校验直接读这张表**——
 ## 加指令只改这里一处：不会出现「数据写了、引擎不认识」的静默丢弃，
 ## 也不会出现「引擎支持、数据校验先拦下来」。
-const COMMANDS := ["say", "effect", "clue", "unlock", "if", "goto"]
+const COMMANDS := ["say", "effect", "clue", "unlock", "if", "goto", "sequence"]
 
 ## 单次 play 最多执行多少步。指令里有 if / goto，数据写错成环就转不出去——
 ## 到顶告警收尾，不把游戏卡死在一次 play 里。
@@ -32,6 +32,9 @@ var game: Node
 ## 表现回调：func(lines: Array, done: Callable)。执行器说「这几句要演，演完叫我」；
 ## 怎么演是表现层的事，执行器不碰 UI。
 var display: Callable = Callable()
+## 演出回调：func(sequence: Dictionary, done: Callable)。重点演出（演出导演）走它，
+## 和 display 一个约定——演出时长归导演管，执行器只等 done。
+var performer: Callable = Callable()
 
 var _running := false
 
@@ -55,6 +58,11 @@ func ack() -> void:
 	if not _running: return
 	index += 1
 	_run()
+
+## 这段剧情还在演吗（在等台词 ack，或在等一段演出）。
+## 调用方「演完调我」的回调不区分同步演完 / 根本没开播，就靠它判断。
+func busy() -> bool:
+	return _running
 
 ## 主循环：能同步跑的就一口气跑完（effect / if / goto 一步接一步），
 ## 碰到 say 就停在原地——台词交给表现层，等它演完 ack() 再继续。
@@ -80,6 +88,9 @@ func _run() -> void:
 		match command:
 			"say":
 				_say(step[command])
+				return
+			"sequence":
+				_sequence(step[command])
 				return
 			"effect":
 				_write(game.apply_effects(step[command]))
@@ -115,6 +126,21 @@ func _say(raw: Variant) -> void:
 		return
 	display.call(lines, ack)
 
+## 来一段重点演出，**等它演完再继续**（设计文档 §7：演出的时长归演出系统管，
+## 剧情在这里暂停）。和台词一样：没有演出回调就告警跳过，不能卡住剧情。
+func _sequence(raw: Variant) -> void:
+	var id := str(raw)
+	var sequences: Dictionary = game.bundle.get("sequences", {})
+	if not sequences.has(id):
+		push_warning("剧情执行器：没有这段演出「%s」，已跳过" % id)
+		ack()
+		return
+	if not performer.is_valid():
+		push_warning("剧情执行器：没有注入演出回调，演出「%s」只跳过" % id)
+		ack()
+		return
+	performer.call(sequences[id], ack)
+
 ## 条件跳转该去哪个节点：条件成立走 then；不成立走 else；没写 else 返回空串 = 原地继续。
 func _branch_of(condition: Dictionary) -> String:
 	if game.matches(condition.get("requires", [])):
@@ -134,8 +160,13 @@ func _finish() -> void:
 	_running = false
 	finished.emit()
 
+## 失败收场：记下 error；**已经开播的剧情**还要发 finished——
+## 对调用方（main._play_story / 演出链）来说「演完了」是**收场**，不分正常还是出错，
+## 等它的人不能永远卡着。还没开播就被拒绝（play() 的早退）不算收场，不发。
 func _fail(message: String) -> String:
 	error = message
+	var was_running := _running
 	_running = false
 	push_warning("剧情执行器：" + message)
+	if was_running: finished.emit()
 	return message

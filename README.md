@@ -16,7 +16,7 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 > **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
 ```
-表现层   scripts/black_page/（12 个）          界面 · 演出 · 输入
+表现层   scripts/black_page/（13 个）          界面 · 演出 · 输入
    │    只调公开方法
    ▼
 引擎层   investigation.gd + services/ + core/  零 UI 依赖，可 headless 跑测试
@@ -46,6 +46,7 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 | --- | --- |
 | 序章剧本 | `data/black_page/prologue.json` |
 | 剧情段落（说台词 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` |
+| 重点演出（打点时间轴） | `data/black_page/sequences.json` |
 | 调查方向（正文 / 条件 / 奖励） | `data/black_page/actions.json` |
 | 旗标类型与默认值 | `data/black_page/flags.json` |
 | 人物 | `data/black_page/people.json` |
@@ -82,10 +83,10 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 
 ```bash
 python tools/audit.py                                            # 期望 exit 0
-godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (122 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (134 checks)
 ```
 
-⚠️ **验收标准是 `PASS (122 checks)` 这个完整字符串，不是「看到 PASS」。**
+⚠️ **验收标准是 `PASS (134 checks)` 这个完整字符串，不是「看到 PASS」。**
 测试只在 `failures == 0` 时报 PASS；一旦有解析错误，后面的检查全部不执行，
 failures 仍是 0 → **假 PASS**。改了测试要同步更新这个数字，以及
 `docs/ARCHITECTURE.md` 里对应的说法。

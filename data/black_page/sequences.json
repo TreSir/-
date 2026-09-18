@@ -1,0 +1,23 @@
+{
+  "ink_settles": {
+    "name": "墨迹落下",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_impact.wav"
+      },
+      {
+        "at": 0.0,
+        "shake": 0.5
+      },
+      {
+        "at": 0.06,
+        "flash": 0.2
+      },
+      {
+        "at": 0.75,
+        "wait": 0.35
+      }
+    ]
+  }
+}

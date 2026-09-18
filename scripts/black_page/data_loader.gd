@@ -4,6 +4,8 @@ const Source = preload("res://scripts/core/json_source.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 ## 指令流剧情的校验要照着**执行器认识的指令表**来：加指令只改执行器一处，这里自动跟上。
 const Runner = preload("res://scripts/core/narrative_runner.gd")
+## 演出数据的校验同理，照着**导演认识的动作表**来（performance_director.gd）。
+const Director = preload("res://scripts/black_page/performance_director.gd")
 var sources: Dictionary = {}
 var error := ""
 
@@ -11,7 +13,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
 	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}}}
-	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "stories"]:
+	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "sequences", "stories"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
 		sources[name] = source
@@ -78,6 +80,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	if not result.endings.back().get("requires", []).is_empty():
 		_fail("endings", "", "兜底结局必须具有最低优先级")
 		return {}
+	if not _compile_sequences(result): return {}
 	if not _compile_stories(result): return {}
 	return result
 
@@ -229,6 +232,54 @@ func _compile_prologue(raw: Variant) -> Array:
 		_fail("prologue", "", "没有任何有效页")
 	return out
 
+## 演出数据（sequences.json）的校验：时间轴形状 + 动作参数。
+##
+## 动作名读导演的 ACTIONS（见 performance_director.gd）——和剧情指令读
+## Runner.COMMANDS 一个规矩：加动作只改导演一处，校验自动跟上。
+func _compile_sequences(bundle: Dictionary) -> bool:
+	for id in bundle.sequences:
+		var sequence: Variant = bundle.sequences[id]
+		var pointer := "/" + str(id)
+		if not sequence is Dictionary: return _fail("sequences", pointer, "演出必须为对象")
+		if not sequence.get("name") is String: return _fail("sequences", pointer, "缺少 name")
+		var steps: Variant = sequence.get("steps")
+		if not steps is Array or (steps as Array).is_empty():
+			return _fail("sequences", pointer, "缺少 steps 数组")
+		for index in steps.size():
+			var step: Variant = steps[index]
+			var step_pointer := pointer + "/steps/" + str(index)
+			# 一步 = 「at + 一个动作」。同一个 at 可以有多步——那就是同时发生的事。
+			if not step is Dictionary or (step as Dictionary).size() != 2:
+				return _fail("sequences", step_pointer, "一步必须是一个「at + 动作」的对象")
+			var at: Variant = (step as Dictionary).get("at")
+			if not (at is float or at is int) or float(at) < 0.0:
+				return _fail("sequences", step_pointer + "/at", "at 必须是不小于 0 的秒数")
+			var action := ""
+			var argument: Variant = null
+			for key in step:
+				if str(key) != "at":
+					action = str(key)
+					argument = step[key]
+			if not action in Director.ACTIONS:
+				return _fail("sequences", step_pointer, "未知动作「%s」，可用：%s" % [action, ", ".join(Director.ACTIONS)])
+			if not _validate_performance(action, argument, step_pointer): return false
+	return true
+
+func _validate_performance(action: String, argument: Variant, pointer: String) -> bool:
+	match action:
+		"sfx":
+			if not argument is String or not ResourceLoader.exists(argument):
+				return _fail("sequences", pointer + "/sfx", "音效文件不存在：" + str(argument))
+		"bgm":
+			if not argument is String:
+				return _fail("sequences", pointer + "/bgm", "bgm 必须是路径，空串表示停")
+			if not (argument as String).is_empty() and not ResourceLoader.exists(argument):
+				return _fail("sequences", pointer + "/bgm", "音乐文件不存在：" + str(argument))
+		"fade_in", "fade_out", "shake", "flash", "wait":
+			if not (argument is float or argument is int) or float(argument) <= 0.0:
+				return _fail("sequences", pointer + "/" + action, "时长必须是正数")
+	return true
+
 ## 指令流剧情（stories.json）的校验：结构 + 引用 + 指令参数。
 ##
 ## 这里**只校验，不改写**：剧情数据进来是什么形状，执行器读到的就是什么形状。
@@ -284,6 +335,10 @@ func _validate_story_step(command: String, argument: Variant, pointer: String, n
 		"unlock":
 			if not argument is String or not bundle.people.has(argument):
 				return _fail("stories", pointer + "/unlock", "未知人物：" + str(argument))
+			return true
+		"sequence":
+			if not argument is String or not bundle.sequences.has(argument):
+				return _fail("stories", pointer + "/sequence", "未知演出：" + str(argument))
 			return true
 		"goto":
 			return _check_story_node(argument, pointer + "/goto", nodes)

@@ -9,7 +9,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 118
+const UI_CHECK_FLOOR := 130
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -208,8 +208,40 @@ func _run() -> void:
 	var logged: int = game.journal.size()
 	check(runner.play("smoke_gate_off").is_empty() and game.journal.size() == logged + 1,
 		"say without a display still logs and moves on")
-	check(runner.play("smoke_loop").contains("上限"),
-		"runaway story stops at the step limit instead of hanging")
+	# 半路坏掉的剧情（打点成环）也要发 finished——它是「收场」信号，不分正常还是出错；
+	# 等它的人（_play_story 的 done / 演出链）靠它放行，不能只在正常演完时才响。
+	var ended := [0]
+	runner.finished.connect(func(): ended[0] += 1, CONNECT_ONE_SHOT)
+	check(runner.play("smoke_loop").contains("上限") and ended[0] == 1 and not runner.busy(),
+		"runaway story stops at the step limit instead of hanging and still reports finished")
+	# 演出（sequence 指令）的契约：执行器**停在演出上等**——演出演完（ack）
+	# 才继续后面的步骤。这就是设计文档 §7 那条「剧情可以暂停在一段演出上」。
+	game.bundle.sequences.smoke_play = {"name": "契约·演出", "steps": [{"at": 0.0, "wait": 0.05}]}
+	game.bundle.stories.smoke_show = {
+		"name": "契约·演出等待",
+		"start": "show",
+		"nodes": {"show": {"steps": [{"sequence": "smoke_play"}, {"say": "演出之后"}]}},
+	}
+	var after: Array = []
+	var performed: Array = []
+	var release := [Callable()]
+	runner.display = func(lines: Array, done: Callable):
+		after.append_array(lines)
+		done.call()
+	runner.performer = func(sequence: Dictionary, done: Callable):
+		performed.append(str(sequence.get("name", "")))
+		release[0] = done
+	check(runner.play("smoke_show").is_empty() and performed == ["契约·演出"] and after.is_empty(),
+		"runner pauses on a sequence and waits for the performance")
+	(release[0] as Callable).call()
+	check(after == ["演出之后"], "runner continues once the performance acks")
+	# 没有演出回调也一样：告警跳过，不能卡住剧情。
+	runner.performer = Callable()
+	var logged_after: int = game.journal.size()
+	check(runner.play("smoke_show").is_empty() and after == ["演出之后", "演出之后"] and game.journal.size() == logged_after + 1,
+		"sequence without a performer is skipped, not stuck")
+	game.bundle.stories.erase("smoke_show")
+	game.bundle.sequences.erase("smoke_play")
 	check(game.restore(contract_checkpoint).is_empty(), "contract story state rolls back")
 	game.bundle.stories.erase("smoke_gate_on")
 	game.bundle.stories.erase("smoke_gate_off")
@@ -253,6 +285,20 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"effect": {"set": {"no_such_flag": 1}}}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
 		"story effect references are validated")
+	# 演出数据（sequences.json）的校验：动作名 / 素材 / 参数在加载期就报出来，
+	# 剧情引用不存在的演出同样拦住——都不等运行时。
+	broken = compiled.duplicate(true)
+	broken.sequences.ink_settles.steps = [{"at": 0.0, "teleport": 1.0}]
+	check(not loader._compile_sequences(broken) and loader.error.contains("sequences.json:") and loader.error.contains("teleport"),
+		"unknown performance action has source location")
+	broken = compiled.duplicate(true)
+	broken.sequences.ink_settles.steps = [{"at": 0.0, "sfx": "res://assets/audio/no_such_sfx.wav"}]
+	check(not loader._compile_sequences(broken) and loader.error.contains("no_such_sfx"),
+		"missing sound file is caught at compile time")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"sequence": "no_such_sequence"}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_sequence"),
+		"story sequence references are validated")
 	await _ui()
 	# 检查数本身就是一道门槛。
 	# 有解析错误时，后面的 check 会静默地不执行，而 PASS/FAIL 只看 failures ——
@@ -387,6 +433,31 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_room.png")
+	# 演出导演（PerformanceDirector）：真实数据 + 真实节点上跑一段演出——
+	# 演完回调恰好一次、幕布/闪光回透明、舞台回原位；中途 stop() 也收得干净。
+	check(is_instance_valid(ui.director) and ui.story.performer.is_valid(),
+			"the story is wired to the performance director")
+	var stage_base: Vector2 = ui.position
+	# 用数组当计数器：GDScript 的 lambda 捕获**值**，`shots += 1` 加的是捕获的副本。
+	var shots := [0]
+	check(ui.director.play(ui.game.bundle.sequences.ink_settles, func(): shots[0] += 1),
+			"the director takes a real sequence")
+	check(ui.director.busy() and shots[0] == 0, "performance is running before its callback")
+	if "--capture-render" in OS.get_cmdline_user_args():
+		# 闪白 + 震动的峰值就在 0.12s 附近：抓这一帧看叠层有没有画上去。
+		await get_tree().create_timer(0.12).timeout
+		await RenderingServer.frame_post_draw
+		DirAccess.make_dir_recursive_absolute("user://screenshots")
+		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_ink_performance.png")
+	await get_tree().create_timer(1.6).timeout
+	check(shots[0] == 1 and not ui.director.busy(), "performance calls back exactly once")
+	check(ui.position == stage_base and ui.director.curtain.color.a == 0.0 and ui.director.flash.color.a == 0.0,
+			"after a performance the stage and the overlays are settled")
+	ui.director.play(ui.game.bundle.sequences.ink_settles, func(): shots[0] += 1)
+	await get_tree().create_timer(0.2).timeout
+	ui.director.stop()
+	check(shots[0] == 2 and not ui.director.busy() and ui.position == stage_base,
+			"stop() ends a performance, restores the stage and still calls back")
 	ui._toggle_menu()
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().process_frame
