@@ -2,6 +2,7 @@ extends Node
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Runner = preload("res://scripts/core/narrative_runner.gd")
+const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
@@ -9,7 +10,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 130
+const UI_CHECK_FLOOR := 154
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -46,7 +47,13 @@ func _click_at(ui: Node, position: Vector2) -> void:
 
 func act(id: String) -> void:
 	check(game.begin_action(id).is_empty(), "begin " + id)
-	check(game.complete_action(game.ticket, {"success": true}).is_empty(), "complete " + id)
+	# 小游戏类行动：结算闸门读的是状态里的小游戏结果（打完时由小游戏经理写进去）。
+	# 这里替经理记一笔，模拟「先打完、再提交」的真实顺序。
+	var action: Dictionary = game.bundle.actions[id]
+	if str(action.kind) == "minigame":
+		check(game.note_minigame(str(action.minigame), {"type": "success", "score": 100}).is_empty(),
+			"minigame result " + id)
+	check(game.complete_action(game.ticket).is_empty(), "complete " + id)
 
 ## 造一个 ESC 按键事件，直接喂给 _unhandled_key_input。
 ## 键盘事件不走 GUI 命中测试，不需要 push_input——直接调就是玩家的真实路径。
@@ -149,9 +156,36 @@ func _run() -> void:
 	check(not game.restore(invalid).is_empty(), "future schema rejected")
 	game.new_game()
 	game.begin_action("camera")
+	# 结果先记好：这样这条断言证明的就是**过期凭据本身**拦住了提交，
+	# 而不是「没通过小游戏」被顺带拦下。
+	game.note_minigame("monitor_rebuild", {"type": "success", "score": 100})
 	var token: int = game.ticket
 	game.cancel_action()
-	check(not game.complete_action(token, {"success": true}).is_empty() and not game.owns("camera"), "stale callback cannot grant rewards")
+	check(not game.complete_action(token).is_empty() and not game.owns("camera"), "stale callback cannot grant rewards")
+
+	# ── 小游戏结果的标准形状（§10）──────────────────────────────────────
+	# 词表和形状只有 core/minigame_result.gd 一份：小游戏、数据校验、
+	# 结算闸门都读它——三处各写一份的话，改一个词就会有一处静默不认。
+	var normalized: Dictionary = MiniGameResult.normalize({"success": true})
+	check(normalized.type == "success" and normalized.score == 100 and normalized.data is Dictionary,
+		"legacy {success} results normalize into the standard shape")
+	normalized = MiniGameResult.normalize({"type": "还没有这个词", "score": 250})
+	check(normalized.type == "failed" and normalized.score == 100,
+		"an unknown result type falls back to failed and the score is clamped")
+	check(MiniGameResult.passed("partial") and not MiniGameResult.passed("cancelled") and not MiniGameResult.passed(""),
+		"the passing set covers partial but not cancelled / failed / empty")
+	# 结果落进状态的唯一入口（小游戏经理走的就是它）。
+	check(not game.note_minigame("no_such_game", {}).is_empty(), "recording an unknown minigame is rejected")
+	game.new_game()
+	check(game.begin_action("camera").is_empty(), "begin an investigation for the minigame gate check")
+	check(not game.complete_action(game.ticket).is_empty() and not game.owns("camera"),
+		"a minigame action cannot be committed before the minigame is passed")
+	check(game.note_minigame("monitor_rebuild", {"type": "partial", "score": 60}).is_empty()
+			and str(game.flag("minigame.monitor_rebuild.type")) == "partial"
+			and int(game.flag("minigame.monitor_rebuild.score")) == 60,
+			"a played result lands in the state through the game facade")
+	check(game.complete_action(game.ticket).is_empty() and game.owns("camera"),
+		"the recorded result is what the commit gate reads")
 
 	# ── 叙事执行器（stories.json）的契约 ─────────────────────────────────
 	# 临时剧情挂在**真实 game** 上跑（不是另起一套 mock）：六种指令全走一遍。
@@ -240,6 +274,39 @@ func _run() -> void:
 	var logged_after: int = game.journal.size()
 	check(runner.play("smoke_show").is_empty() and after == ["演出之后", "演出之后"] and game.journal.size() == logged_after + 1,
 		"sequence without a performer is skipped, not stuck")
+	# 小游戏（minigame 指令）的契约同上：执行器**停在那一局上等**，
+	# 打完（或被打断）放行才继续。结果**不从回调参数进剧情**——进的是状态，
+	# 剧情要用就用 if 查（设计文档 §9.3：小游戏不允许直接决定剧情）。
+	game.bundle.minigames.smoke_game = {
+		"name": "契约·小游戏",
+		"scene": "res://scenes/black_page/timeline.tscn",
+		"config": {"prompt": "契约", "segments": ["一", "二"], "order": [0, 1]},
+	}
+	game.bundle.stories.smoke_minigame = {
+		"name": "契约·小游戏等待",
+		"start": "show",
+		"nodes": {"show": {"steps": [{"minigame": "smoke_game"}, {"say": "小游戏之后"}]}},
+	}
+	var after_game: Array = []
+	var played: Array = []
+	var release_game := [Callable()]
+	runner.display = func(lines: Array, done: Callable):
+		after_game.append_array(lines)
+		done.call()
+	runner.play_minigame = func(id: String, done: Callable):
+		played.append(id)
+		release_game[0] = done
+	check(runner.play("smoke_minigame").is_empty() and played == ["smoke_game"] and after_game.is_empty(),
+		"runner pauses on a minigame and waits for the played result")
+	(release_game[0] as Callable).call()
+	check(after_game == ["小游戏之后"], "runner continues once the minigame releases it")
+	# 没有小游戏回调也一样：告警跳过，不能卡住剧情。
+	runner.play_minigame = Callable()
+	var logged_game: int = game.journal.size()
+	check(runner.play("smoke_minigame").is_empty() and after_game.size() == 2 and game.journal.size() == logged_game + 1,
+		"minigame without a callback is skipped, not stuck")
+	game.bundle.stories.erase("smoke_minigame")
+	game.bundle.minigames.erase("smoke_game")
 	game.bundle.stories.erase("smoke_show")
 	game.bundle.sequences.erase("smoke_play")
 	check(game.restore(contract_checkpoint).is_empty(), "contract story state rolls back")
@@ -299,6 +366,20 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"sequence": "no_such_sequence"}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_sequence"),
 		"story sequence references are validated")
+	# 小游戏数据（minigames.json）的校验：场景 / 参数 / 结果声明在加载期就报出来；
+	# 结果类型词表读的是代码里那一张（MiniGameResult.TYPES）——数据少写一个也拦住。
+	broken = compiled.duplicate(true)
+	broken.minigames.monitor_rebuild.scene = "res://scenes/black_page/no_such_scene.tscn"
+	check(not loader._compile_minigames(broken) and loader.error.contains("minigames.json:") and loader.error.contains("no_such_scene"),
+		"missing minigame scene has source location")
+	broken = compiled.duplicate(true)
+	broken.flags["minigame.monitor_rebuild.type"].values = ["success", "failed"]
+	check(not loader._compile_minigames(broken) and loader.error.contains("少了结果类型"),
+		"the result vocabulary must cover every type the code knows")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"minigame": "no_such_game"}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_game"),
+		"story minigame references are validated")
 	await _ui()
 	# 检查数本身就是一道门槛。
 	# 有解析错误时，后面的 check 会静默地不执行，而 PASS/FAIL 只看 failures ——
@@ -521,16 +602,20 @@ func _ui() -> void:
 	ui._enter_room()
 	await get_tree().process_frame
 
-	# 小游戏
+	# 小游戏：经理把场景装进弹层、打完把结果落进状态，再走结果页（正文 + 提交）。
 	# _investigate 里有转场（异步），要等它走完再取弹层内容
 	ui._investigate("camera")
 	await get_tree().create_timer(1.0).timeout
+	check(ui.minigames.busy(), "the minigame manager owns the running round")
 	var activity = ui.modal_rows.get_child(1)
 	activity._select(0)
 	check(activity.selected.is_empty(), "minigame incorrect choice resets")
 	for index in [1, 2, 0]: activity._select(index)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	check(str(ui.game.flag("minigame.monitor_rebuild.type")) == "success" and not ui.minigames.busy(),
+		"the played result lands in the state before the report shows")
+	check(ui.modal_rows.get_child_count() == 4, "a finished minigame shows the report page")
 	ui.modal_rows.get_child(2).pressed.emit()
 	check(ui.game.owns("camera") and ui.game.flag("actions_left") == 2 and not ui.modal.visible, "UI minigame reward once and return")
 	await get_tree().process_frame
@@ -552,7 +637,7 @@ func _ui() -> void:
 
 	# ── 行动锁不许在任何「退出路径」上漏掉 ─────────────────────────────────
 	# 锁（game.active_action）不释放，玩家就卡在「不能开始新调查、不能存档、
-	# 不能重载数据」的死角里，只有重新开始能出去。三条退出路径各验一次。
+	# 不能重载数据」的死角里，只有重新开始能出去。四条退出路径各验一次。
 	ui.game.new_game()
 	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the ESC check")
 	ui._open_minigame("camera")
@@ -560,9 +645,28 @@ func _ui() -> void:
 	check(ui.modal.visible and not ui.game.active_action.is_empty(), "the minigame modal holds the action lock")
 	ui._unhandled_key_input(_esc())
 	await get_tree().process_frame
+	await get_tree().process_frame
 	check(ui.game.active_action.is_empty() and not ui.modal.visible and ui.scene_id == "room",
 		"ESC on an investigation modal releases the lock and returns to the room")
 	check(ui.game.flag("actions_left") == 3, "abandoning an investigation spends no action")
+	# 打断的那一局也要留痕：记 cancelled——剧情 / 结算用 if 查得到「玩家退出了」。
+	check(str(ui.game.flag("minigame.monitor_rebuild.type")) == "cancelled" and not ui.minigames.busy(),
+		"an abandoned minigame is recorded as cancelled")
+	# 结果页上的「返回」：小游戏已经通过，也可以不记账就走——不消耗行动、不发线索。
+	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the report check")
+	ui._open_minigame("camera")
+	await get_tree().process_frame
+	var round_game = ui.modal_rows.get_child(1)
+	for index in [1, 2, 0]: round_game._select(index)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(str(ui.game.flag("minigame.monitor_rebuild.type")) == "success" and ui.modal_rows.get_child_count() == 4,
+		"a passed minigame records its result and shows the report")
+	ui.modal_rows.get_child(3).pressed.emit()
+	await get_tree().process_frame
+	check(ui.game.active_action.is_empty() and ui.game.flag("actions_left") == 3
+			and not ui.game.owns("camera") and not ui.modal.visible,
+		"backing out of the report releases the lock without spending an action")
 	# 菜单的「回到房间」
 	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the menu check")
 	ui._return_to_room()

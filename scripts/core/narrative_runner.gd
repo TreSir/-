@@ -16,7 +16,7 @@ signal finished
 ## 执行器认识的指令集合。**data_loader 的校验直接读这张表**——
 ## 加指令只改这里一处：不会出现「数据写了、引擎不认识」的静默丢弃，
 ## 也不会出现「引擎支持、数据校验先拦下来」。
-const COMMANDS := ["say", "effect", "clue", "unlock", "if", "goto", "sequence"]
+const COMMANDS := ["say", "effect", "clue", "unlock", "if", "goto", "sequence", "minigame"]
 
 ## 单次 play 最多执行多少步。指令里有 if / goto，数据写错成环就转不出去——
 ## 到顶告警收尾，不把游戏卡死在一次 play 里。
@@ -35,6 +35,10 @@ var display: Callable = Callable()
 ## 演出回调：func(sequence: Dictionary, done: Callable)。重点演出（演出导演）走它，
 ## 和 display 一个约定——演出时长归导演管，执行器只等 done。
 var performer: Callable = Callable()
+## 小游戏回调：func(minigame_id: String, done: Callable)。玩家操作归小游戏经理，
+## 执行器只等 done——**结果不从这里回传**：它落进 GameState（note_minigame），
+## 剧情用 if 查 `minigame.<id>.type` 自己判断（设计文档 §9.3：小游戏不决定剧情）。
+var play_minigame: Callable = Callable()
 
 var _running := false
 
@@ -92,6 +96,9 @@ func _run() -> void:
 			"sequence":
 				_sequence(step[command])
 				return
+			"minigame":
+				_minigame(step[command])
+				return
 			"effect":
 				_write(game.apply_effects(step[command]))
 			"clue":
@@ -140,6 +147,20 @@ func _sequence(raw: Variant) -> void:
 		ack()
 		return
 	performer.call(sequences[id], ack)
+
+## 来一局小游戏，**等玩家打完再继续**（设计文档 §9.2：剧情暂停 → 玩家操作 →
+## 结果进状态 → 剧情继续）。和演出一样：没接回调 / 未知小游戏就告警跳过，不卡剧情。
+func _minigame(raw: Variant) -> void:
+	var id := str(raw)
+	if not game.bundle.get("minigames", {}).has(id):
+		push_warning("剧情执行器：没有这个小游戏「%s」，已跳过" % id)
+		ack()
+		return
+	if not play_minigame.is_valid():
+		push_warning("剧情执行器：没有注入小游戏回调，小游戏「%s」只跳过" % id)
+		ack()
+		return
+	play_minigame.call(id, ack)
 
 ## 条件跳转该去哪个节点：条件成立走 then；不成立走 else；没写 else 返回空串 = 原地继续。
 func _branch_of(condition: Dictionary) -> String:

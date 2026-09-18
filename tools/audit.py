@@ -47,7 +47,7 @@ DYNAMIC_ASSET_PATTERNS = [
 
 ## 名字动态拼出来的旗标前缀（声明了也不会被文本扫到，属于正常）。
 DYNAMIC_FLAG_PREFIXES = (
-    "person.", "clue.", "action.", "case.", "event.", "ui.",
+    "person.", "clue.", "action.", "case.", "event.", "ui.", "minigame.",
 )
 
 ## 已知的「故意保留」项，不算问题。

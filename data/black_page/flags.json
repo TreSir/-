@@ -251,6 +251,24 @@
       "forged"
     ]
   },
+  "minigame.monitor_rebuild.type": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "perfect",
+      "success",
+      "partial",
+      "failed",
+      "cancelled"
+    ]
+  },
+  "minigame.monitor_rebuild.score": {
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 100
+  },
   "action.camera.done": {
     "type": "bool",
     "default": false

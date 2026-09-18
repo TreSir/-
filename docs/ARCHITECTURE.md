@@ -119,7 +119,7 @@
 
 ## 三、目录与职责
 
-### `scripts/black_page/` —— 黑页自己（13 个）
+### `scripts/black_page/` —— 黑页自己（14 个）
 
 | 文件 | 职责 | 关键约束 |
 | --- | --- | --- |
@@ -127,10 +127,11 @@
 | `investigation.gd` | **游戏逻辑中枢**。行动可用性、结算、落笔、结束一天、结局判定 | **唯一允许写 `GameState` 的地方** |
 | `data_loader.gd` | 编译 `data/black_page/*.json` → `bundle`；字段校验 + 跨文件引用检查 + 规范化 | 加数据文件必须同时改这里的加载列表 |
 | `performance_director.gd` | **演出导演**（表现层）。把 `sequences.json` 的时间轴演出来；自带幕布/闪白叠层与镜头震动 | 动作表 `ACTIONS` 是校验和执行共用的那一张表；`done` 保证被调且只调一次 |
+| `minigame_manager.gd` | **小游戏经理**（表现层）。把 `minigames.json` 里的场景装进弹层、等打完、把结果落进状态、把场景卸掉 | 不认识任何具体小游戏，也不认识「行动点」；结果写状态走 `game.note_minigame()`；`done` 保证被调且只调一次 |
 | `ui_style.gd` | 视觉令牌 + 控件工厂。所有 UI 构件从这儿造 | 颜色/字号/间距只在这里定义 |
 | `scenes.gd` | 场景表：场景 id → 名称 + 贴图 | 加场景要同时配 `transitions.json` |
 | `hotspots.gd` | 房间背景上的可点热区（UV 比例表） | UV→屏幕换算在 `core/hotspot_layer.gd`；`target` 必须能在 `main._hotspot_pressed` 里找到分支 |
-| `timeline.gd` | 监控排序小游戏 | 继承 `core/minigame.gd` |
+| `timeline.gd` | 监控排序小游戏 | 继承 `core/minigame.gd`；打完 `finish()` 一份标准结果（`core/minigame_result.gd` 的形状） |
 | `launch.gd` | 启动页 | — |
 | `room.gd` | 房间背景：正式插画 + 程序化雨丝/暗角 | 只管画面，热区归 `main.gd` |
 | `bgm_player.gd` | 背景音乐，双缓冲淡入淡出 | 换曲目去改 `audio_tracks.gd` |
@@ -151,7 +152,7 @@
 > `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
 > 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（10 个）
+### `scripts/core/` —— 与内容无关的机制（11 个）
 
 | 文件 | 职责 |
 | --- | --- |
@@ -160,8 +161,9 @@
 | `save_store.gd` | 存档文件读写（盘上的字节） |
 | `save_manager.gd` | **存档的形状**：打包 / 校验 / 写读。静态函数，不持有状态——「什么时候能存」是 investigation 的规矩 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
+| `minigame_result.gd` | **小游戏结果的词表与形状**（`{type, score, data}` + `passed()`）。小游戏、数据校验、结算闸门都读这一份 |
 | `scripted.gd` | **页数组剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
-| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto` / `sequence`；表现与演出回调都由调用方注入 |
+| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto` / `sequence` / `minigame`；表现、演出、小游戏回调都由调用方注入 |
 | `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
 | `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
 | `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
@@ -172,9 +174,10 @@
 > `narrative_runner.gd` 同理：剧情从 `game.bundle.stories` 读，台词怎么演由注入的
 > `display` 回调决定，状态写入走 `game.apply_effects()` / `add_clue()` / `apply_state()`；
 > `sequence` 指令交给注入的 `performer` 回调（`performance_director.gd` 的 `play`），
-> **演完回调才放行**——剧情就这么等待一段重点演出。
+> `minigame` 指令交给注入的 `play_minigame` 回调（`minigame_manager.gd`），
+> **演完 / 打完回调才放行**——剧情就这么等待一段重点演出或一局小游戏。
 > **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）；
-> 演出动作表 `ACTIONS` 同理（`data_loader` 照着它查 `sequences.json`）。
+> 演出动作表 `ACTIONS`、小游戏结果词表 `TYPES` 同理。
 
 ---
 
@@ -193,7 +196,7 @@
 | `core/typewriter.gd` 逐字显示 | `main.gd` / `scripted.gd` 的演出 |
 | `core/hotspot_layer.gd` UV 热区层 | `stories.json` 里的剧情段落（黑页的故事） |
 | `core/narrative_runner.gd` 指令流执行器 | — |
-| `core/minigame.gd` 小游戏契约 | — |
+| `core/minigame.gd` / `core/minigame_result.gd` 小游戏契约与结果 | — |
 | `services/game_state.gd` 强类型状态 | — |
 | `services/event_bus.gd` 事件总线 | — |
 
@@ -242,7 +245,8 @@ data/black_page/*.json
       ├──▶ investigation.gd    （读 bundle 判断与结算）
       ├──▶ core/scripted.gd    （页数组剧本引擎；序章由 main 注入 bundle.prologue 后开演）
       ├──▶ core/narrative_runner.gd （指令流剧情；main 注入 game 与表现回调后开播）
-      │       └─▶ performance_director.gd （sequence 指令交给它演；演完回调，剧情继续）
+      │       ├─▶ performance_director.gd （sequence 指令交给它演；演完回调，剧情继续）
+      │       └─▶ minigame_manager.gd     （minigame 指令交给它跑；打完写状态、回调放行）
       └──▶ main.gd             （读 bundle 画界面）
       │
       ▼
@@ -278,7 +282,8 @@ data/black_page/*.json
 | --- | --- | --- |
 | `new_game()` / `load_game()` / `save_game()` | 开局 / 读档 / 存档 | — |
 | `begin_action(id)` / `cancel_action()` | 开始 / 取消行动 | 二者都会 `ticket += 1` |
-| `complete_action(token, result)` | 结算行动 | **必须带发起时的 token**；失败也要放行动锁（见七.3） |
+| `complete_action(token)` | 结算行动 | **必须带发起时的 token**；小游戏类行动读 `minigame.<id>.type` 判通过；失败也要放行动锁（见七.3） |
+| `note_minigame(id, result)` | 记录一局小游戏的结果 | 小游戏经理打完 / 被打断时调；归一化成 `{type, score, data}` 后写进状态（见八） |
 | `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
 | `end_day()` | 结束一天，兑现所有 pending | 事务式，失败则状态零变化 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
@@ -302,6 +307,7 @@ clue.<id>.reliability
 action.<id>.done
 case.<id>.status
 event.<id>.done
+minigame.<id>.{type,score}         ← 最近一局打成什么样（见八）
 ui.<key>                       ← 侧栏入口是否点亮
 ```
 
@@ -320,15 +326,16 @@ ui.<key>                       ← 侧栏入口是否点亮
 | `flags.json` | 所有旗标的类型与默认值 |
 | `people.json` | 人物（假名 / 真名 / 身份 / 描述） |
 | `clues.json` | 线索（含 `people` 字段，图鉴的关联靠它推导；`variants` 按条件换正文，界面不再特判） |
-| `actions.json` | 调查方向（`requires` / `clues` / `effects` / `text`） |
+| `actions.json` | 调查方向（`requires` / `clues` / `effects` / `text`；小游戏类只写 `"minigame": "<id>"` 引用，场景与参数在 `minigames.json`） |
 | `cases.json` | 案件 |
 | `events.json` | 定时事件 |
 | `endings.json` | 结局。**必须有且仅有一个无条件兜底，且优先级最低** |
 | `codex.json` | 人物图鉴的档案条目（每条带 `at` 阈值） |
 | `transitions.json` | 转场（`cut` / `fade` / `slide`；优先级 **单条行动 > 目标场景 > 全局默认**） |
 | `prologue.json` | 序章剧本（页数组：背景 / 卡片 / 热区 / 选项） |
-| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出） |
+| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出 / 小游戏） |
 | `sequences.json` | 重点演出的时间轴（`at` 打点 + 一条动作：音效 / 音乐 / 淡入淡出 / 震动 / 闪白 / 等待） |
+| `minigames.json` | 小游戏（场景路径 + 开局参数）。动作与剧情都只引用 id——同一局小游戏能被两处复用 |
 
 ---
 
@@ -366,8 +373,9 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 
 两条规则：
 
-1. **引擎层**：`complete_action` 只在「可以重试」时留锁（小游戏没做完，
-   弹层还开着）；事务失败、方向失效这类路径一律先 `cancel_action()` 再返回错误。
+1. **引擎层**：`complete_action` 只在「可以重试」时留锁（小游戏还没通过——
+   结果没落进状态 / 落的是 failed，弹层还开着可以重打）；事务失败、方向失效
+   这类路径一律先 `cancel_action()` 再返回错误。
 2. **表现层**：所有能让调查弹层 / 调查场景消失的出口——弹层上的「返回」、
    ESC、菜单的「回到房间」、黑页的「合上黑页」——都走 `main.gd` 的
    `_return_to_room()`，由它统一「有锁就放，然后回房间」。
@@ -491,6 +499,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 | `if` | `{requires, then, else?}` | 条件成立跳 `then`；不成立跳 `else`（没写就继续下一步） |
 | `goto` | 节点名 | 无条件跳 |
 | `sequence` | 演出 id（`sequences.json` 的键） | **重点演出**：交给演出导演演，演完继续下一步（见下） |
+| `minigame` | 小游戏 id（`minigames.json` 的键） | **一局小游戏**：交给小游戏经理开，打完（或被打断）继续下一步（见下） |
 
 **没有 `end` 指令**：节点跑完 = 剧情结束，发 `finished`。
 
@@ -545,6 +554,52 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - **界面上没有导演就直接跳**：没注入 `performer` 时执行器告警并继续——演出是**装饰**，不挡剧情。
 - 打点时刻是**相对本段开头**的秒数；`at: 0` 可以多条同时发生（那正是时间轴的意义）。
 
+### 小游戏（minigames.json + 小游戏经理）
+
+剧情暂停 → 玩家操作 → 结果进状态 → 剧情继续。小游戏是「玩家动手」的段落，
+**不决定剧情**：它只产出一份结果，怎么解读是数据的事（见下）。
+
+一局小游戏 = `minigames.json` 里的一个对象：**在哪玩（scene）、怎么配（config）、叫什么（name）**：
+
+```json
+"monitor_rebuild": {
+  "name": "还原公交站监控",
+  "scene": "res://scenes/black_page/timeline.tscn",
+  "config": { "prompt": "按发生时间依次选择片段。", "segments": ["…"], "order": [1, 2, 0] }
+}
+```
+
+**两个入口，同一种开法**：
+
+| 入口 | 数据写法 | 什么时候用 |
+| --- | --- | --- |
+| 调查行动 | `actions.json` 里 `kind: "minigame"` + `minigame: "<id>"` | 玩家在房间里点某个热点时开一局 |
+| 剧情指令 | `stories.json` 里 `{"minigame": "<id>"}` | 剧情演到某处自动开一局，打完接着演 |
+
+两条路都汇到 `minigame_manager.gd`（表现层）：查 `minigames.json` → 实例化场景 → `begin(config, flags)` →
+等场景 `completed(结果)` → **经理写状态**（`game.note_minigame`）→ 收场回调。
+**id 注册表在 `minigames.json`**：一条小游戏可以被多条行动、多段剧情复用，配置只写一遍。
+
+结果是一条 `{type, score, data?}`——`type` 只能取 `core/minigame_result.gd` 的 `TYPES`
+（`perfect / success / partial / failed / cancelled`），`score` 归一化到 `0–100`；
+`passed()` 是**通用判据**：`success` 及以上算过。
+
+几条约定：
+
+- **小游戏不允许直接决定剧情**（设计文档 §9.3）：它只把结果交给经理写进状态
+  （`minigame.<id>.type` / `.score`），剧情要分支就自己用 `if` 查——
+  「打得好」与「打出什么后果」是两件事，写数据的人说了算。
+- **被打断 = `cancelled`**：玩家 ESC / 退出这局时经理补一个 cancelled 结果，回调照发。
+  剧情里的分支可以据此安排「没打完也往下走」的写法。
+- **`done` 保证被调用且只调一次**：和演出一个约定——正常打完调；被 ESC 收掉、开机失败
+  （缺场景 / 未知 id / 没注入容器）也调。调用方挂在 `done` 上等待，**不会卡死**；
+  开着新一局之前先把上一局收掉，上一局等的人（拿的是上一局的 `done`）不会被顶掉。
+- **结果类型是一张共享表**：`data_loader` 校验 `minigames.json` 的 `values` 声明时读
+  `MiniGameResult.TYPES`，「数据写了、引擎不认识」在编译期报出来。
+  加一种结果类型 = 改 `TYPES` + `normalize` 一处，编译器自动跟上。
+- 小游戏场景的契约：`begin(config, flags)` 起、完成时 `emit completed(结果)`——
+  具体怎么玩（时间轴 / 拼图 / 别的）归场景自己管，经理只认这一进一出。
+
 ---
 
 ## 九、加功能的规矩
@@ -578,7 +633,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 134 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 158 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -588,7 +643,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (134 checks)
+# 期望输出：BLACK_PAGE: PASS (158 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -598,7 +653,7 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
 测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败），改测试时让它贴着当前数。
-**验收标准是 `PASS (134 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (158 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -665,6 +720,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
 | 一段指令流剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
 | 一段重点演出（时间轴打点） | `data/black_page/sequences.json` + 在 `stories.json` 里用 `sequence` 指令引用 | ✓ 动作名与素材引用在编译期校验 |
+| 一个小游戏 | `data/black_page/minigames.json`（场景 + 配置）· 在调查行动或剧情指令里引用 · 需要的旗标写进 `flags.json` | ✓ 场景存在与结果声明在编译期校验 |
 | 一条调查方向 | `actions.json` | ✓ 引用校验 |
 | 一条线索 / 一个人 / 一个案件 / 一个结局 / 一个事件 | 对应的 JSON | ✓ 跨文件引用校验 |
 | 一条人物档案条目 | `codex.json` | ✓ |
@@ -678,6 +734,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
 | **一种剧情指令** | `core/narrative_runner.gd` 的 **`COMMANDS` 表 + `_run` 的 match** | **1 处**（校验读同一张表） | ✓ 未知指令在编译期报错 |
 | **一种演出动作** | `performance_director.gd` 的 **`ACTIONS` 表 + `_act` 的 match** | **1 处**（校验读同一张表） | ✓ 未知动作在编译期报错 |
+| **一种小游戏结果类型** | `core/minigame_result.gd` 的 **`TYPES` 表 + `normalize` 的 match** | **1 处**（校验读同一张表） | ✓ 数据里的未知结果类型在编译期报错 |
 | 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
@@ -700,7 +757,8 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 
 同一课后来用在剧情指令上：`data_loader` 校验指令名时**直接读执行器的 `COMMANDS` 表**，
 不自己抄一份——抄一份就会重演「数据写了、引擎不认识」。
-演出动作同理（校验 `sequences.json` 时读导演的 `ACTIONS` 表）。
+演出动作同理（校验 `sequences.json` 时读导演的 `ACTIONS` 表），
+小游戏结果类型同理（校验 `minigames.json` 的 `values` 时读 `MiniGameResult.TYPES`）。
 
 ---
 
@@ -719,11 +777,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (134 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (158 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (134 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (158 checks)
 ```

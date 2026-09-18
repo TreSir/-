@@ -15,7 +15,7 @@ extends Control
 ##   · _confirm 产出 modal_rows：0 标题、1 正文、2 确认按钮、3 返回按钮
 ##     （_ask_write 会直接改 2 和 3 的文字）。
 ##   · 小游戏：0 标题、1 小游戏实例、2 返回按钮。
-##   · 调查结果：0 标题、1 正文、2 提交按钮。
+##   · 调查结果：0 标题、1 正文、2 提交按钮、3 返回按钮（不消耗行动）。
 
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Room = preload("res://scripts/black_page/room.gd")
@@ -27,6 +27,8 @@ const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
 ## 演出导演：重点场面的时间轴演出（震屏 / 闪白 / 幕布 / 音效）。
 const Director = preload("res://scripts/black_page/performance_director.gd")
+## 小游戏经理：开一局、等打完、把结果落进状态。界面不自己管小游戏的生命周期。
+const MiniGameManager = preload("res://scripts/black_page/minigame_manager.gd")
 ## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
 const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
@@ -73,6 +75,9 @@ var music: BgmPlayer
 var sfx: SfxPlayer
 ## 演出导演（重点场面的时间轴演出）。剧情里的 sequence 指令由它演。
 var director: Director
+## 小游戏经理。小游戏场景装进弹层、结果落进状态都走它；
+## 剧情里的 minigame 指令、案件面板发起的调查，两条来路共用这一个经理。
+var minigames: MiniGameManager
 var rain_muted := false
 var music_muted := false
 var sfx_muted := false
@@ -201,6 +206,16 @@ func _build() -> void:
 
 	_build_menu()
 	_build_modal()
+
+	# 小游戏经理：小游戏进的是弹层（container = modal_rows），
+	# 于是「弹层被清空」就等于「玩家离开了这一局」——返回 / ESC / 回到房间
+	# 全都会经过弹层清理，经理靠这一点保证行动锁不会漏（见 minigame_manager.gd）。
+	# 结果写状态走 game 的口子，界面自己不记分。
+	minigames = MiniGameManager.new()
+	minigames.name = "MiniGameManager"
+	add_child(minigames)
+	minigames.game = game
+	minigames.container = modal_rows
 
 	# 演出导演：挂在自己身上——震屏 = 整屏都在抖。自带的遮罩后加，
 	# 所以盖在 _build 搭好的界面（HUD / 菜单 / 弹层）之上。
@@ -667,6 +682,9 @@ func _play_story(story_id: String, done: Callable = Callable()) -> void:
 		story.game = game
 		story.display = func(lines: Array, next: Callable): _say(lines, next)
 		story.performer = Callable(director, "play")
+		# 剧情里的小游戏由经理跑（minigame 指令）：演到那一步就装进弹层，
+		# 打完把执行器放行继续往下演。
+		story.play_minigame = Callable(self, "_run_story_minigame")
 		story.finished.connect(refresh)
 	var error: String = story.play(story_id)
 	if not error.is_empty():
@@ -1079,7 +1097,7 @@ func _investigate(action_id: String) -> void:
 ## 提交失败也要回房间（文案里本来就写着「请返回」）：把人留在调查场景里，
 ## 那里没有热点、队列也空了，玩家会卡在那儿出不去。
 func _commit(_action_id: String) -> void:
-	_enter_room(game.complete_action(game.ticket, {}))
+	_enter_room(game.complete_action(game.ticket))
 
 func _open_minigame(action_id: String) -> void:
 	var action: Dictionary = game.bundle.actions[action_id]
@@ -1090,19 +1108,20 @@ func _open_minigame(action_id: String) -> void:
 	modal.show()
 	_investigation_modal = true
 	modal_rows.add_child(_modal_head("调查 ／ 监控", str(action.name)))
-	var activity = load(action.scene).instantiate()
-	if activity is Control:
-		activity.custom_minimum_size.y = maxf(activity.custom_minimum_size.y, 460.0)
-	modal_rows.add_child(activity)
-	activity.completed.connect(func(result: Dictionary):
-		if token == game.ticket: _show_report.call_deferred(action_id, token, result))
-	activity.begin(action.config, game.flags_snapshot())
+	# 小游戏本体交给经理：场景与参数来自 minigames.json，结果也由它落进状态。
+	# 打完（通过 / 打不下去都算）再走结果页——结果页只负责「读状态、提交」。
+	# 回调不带结果参数：状态是唯一真相源，要用就去读 game.flag。
+	minigames.run(str(action.minigame), func():
+		# 过期回调（玩家已经退出这一局）不再弹结果页——token 就是这一局的凭据。
+		if token == game.ticket: _show_report.call_deferred(action_id, token))
 	var back := UI.ghost_button("返回（不消耗行动）")
 	back.pressed.connect(_return_to_room)
 	modal_rows.add_child(back)
 	_fit_modal(false)
 
-func _show_report(action_id: String, token: int, result: Dictionary) -> void:
+## 调查结果页：正文 + 提交。**结果不从参数进来**——打完时经理已经把它记进状态
+## （note_minigame），提交只负责读状态、发奖励。
+func _show_report(action_id: String, token: int) -> void:
 	if token != game.ticket: return
 	_close_modal()
 	modal.show()
@@ -1115,12 +1134,13 @@ func _show_report(action_id: String, token: int, result: Dictionary) -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(UI.narrow(UI.flow(str(action.text), UI.SIZE_BODY, Color("d3e0e7")), 0.24))
 	body.add_child(UI.rule())
-	var warn := UI.flow("记录结果后消耗 1 次行动，不能取消。", UI.SIZE_MICRO, UI.TEXT_MUTE)
+	var warn := UI.flow("记录结果后消耗 1 次行动。返回则不消耗，这次调查作废。", UI.SIZE_MICRO, UI.TEXT_MUTE)
 	body.add_child(warn)
 	modal_rows.add_child(body)
 	modal_rows.add_child(UI.primary_button("记录结果，返回房间"))
+	modal_rows.add_child(UI.ghost_button("返回（不消耗行动）"))
 	modal_rows.get_child(2).pressed.connect(func():
-		var error: String = game.complete_action(token, result)
+		var error: String = game.complete_action(token)
 		if not error.is_empty():
 			# 锁还在 ⇒ 还能重试（小游戏没做完），错误就地显示；
 			# 锁没了（回调过期 / 事务中止 / 次日结算失败）⇒ 没有可重试的东西了，
@@ -1133,7 +1153,27 @@ func _show_report(action_id: String, token: int, result: Dictionary) -> void:
 			return
 		_close_modal()
 		_enter_room())
+	modal_rows.get_child(3).pressed.connect(_return_to_room)
 	_fit_modal()
+
+## 剧情里开一局小游戏（执行器的 minigame 指令）。
+## 这一幕的画面就是弹层：装上、等打完、收掉，然后把执行器放行继续往下演。
+## **结果怎么用是剧情的事**（用 if 查状态）；打断（ESC）也只记 cancelled——
+## 剧情照常往下走，这样数据作者能自己决定「中途退出」该发生什么。
+func _run_story_minigame(minigame_id: String, done: Callable) -> void:
+	_close_modal()
+	modal.show()
+	# 剧情里的小游戏后面没有行动锁，ESC 只收弹层（见 _unhandled_key_input）。
+	_investigation_modal = false
+	var minigame: Dictionary = game.bundle.get("minigames", {}).get(minigame_id, {})
+	modal_rows.add_child(_modal_head("小游戏", str(minigame.get("name", minigame_id))))
+	# 开不起来时经理会先放行（done 已保证被调过），这里不要再补一次收尾动作：
+	# 放行可能已经让剧情往下演、甚至开了下一局，补收尾会误伤新弹层。
+	var started: bool = minigames.run(minigame_id, func():
+		_close_modal()
+		done.call())
+	if not started: return
+	_fit_modal(false)
 
 ## 回房间。**进行中的调查要一并放弃**——行动锁不释放，玩家就会卡在
 ## 「不能开始新调查、不能存档、不能重载数据」的状态里，只有重新开始能出去。

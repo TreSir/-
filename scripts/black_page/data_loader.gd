@@ -6,6 +6,8 @@ const Rules = preload("res://scripts/core/rules.gd")
 const Runner = preload("res://scripts/core/narrative_runner.gd")
 ## 演出数据的校验同理，照着**导演认识的动作表**来（performance_director.gd）。
 const Director = preload("res://scripts/black_page/performance_director.gd")
+## 小游戏结果的类型词表也读代码里那一张（core/minigame_result.gd）。
+const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
 var sources: Dictionary = {}
 var error := ""
 
@@ -13,7 +15,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
 	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}}}
-	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "sequences", "stories"]:
+	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "sequences", "stories", "minigames"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
 		sources[name] = source
@@ -81,6 +83,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 		_fail("endings", "", "兜底结局必须具有最低优先级")
 		return {}
 	if not _compile_sequences(result): return {}
+	if not _compile_minigames(result): return {}
 	if not _compile_stories(result): return {}
 	return result
 
@@ -123,8 +126,10 @@ func _validate_row(group: String, id: String, row: Dictionary, bundle: Dictionar
 			for clue in row.clues:
 				if not bundle.clues.has(clue): return _fail(group, pointer + "/clues", "未知线索 " + str(clue))
 			if row.kind == "minigame":
-				if not row.get("scene") is String or not ResourceLoader.exists(row.scene): return _fail(group, pointer + "/scene", "小游戏场景不存在")
-				if not row.get("config") is Dictionary: return _fail(group, pointer, "小游戏缺少参数")
+				# 小游戏本体（场景 / 参数）在 minigames.json 里定义，动作只引用 id——
+				# 同一局游戏因此能被别的动作和剧情复用。
+				if not row.get("minigame") is String or not bundle.minigames.has(row.minigame):
+					return _fail(group, pointer + "/minigame", "未知小游戏：" + str(row.get("minigame")))
 		"events":
 			if not row.get("text") is String or not bundle.flags.has("event." + id + ".done"): return _fail(group, pointer, "事件缺少文本或完成声明")
 		"cases":
@@ -280,6 +285,32 @@ func _validate_performance(action: String, argument: Variant, pointer: String) -
 				return _fail("sequences", pointer + "/" + action, "时长必须是正数")
 	return true
 
+## 小游戏（minigames.json）的校验：名字 / 场景存在 / 参数形状，
+## 以及**结果旗标的声明齐全**——结果要走 if 被剧情查，就得先有地方落。
+##
+## 类型值表读 MiniGameResult.TYPES：加一种结果类型只改代码一处，
+## 这里自动要求数据把新类型的值补上。
+func _compile_minigames(bundle: Dictionary) -> bool:
+	for id in bundle.minigames:
+		var minigame: Variant = bundle.minigames[id]
+		var pointer := "/" + str(id)
+		if not minigame is Dictionary: return _fail("minigames", pointer, "小游戏必须为对象")
+		if not minigame.get("name") is String: return _fail("minigames", pointer, "缺少 name")
+		if not minigame.get("scene") is String or not ResourceLoader.exists(minigame.scene):
+			return _fail("minigames", pointer + "/scene", "场景不存在：" + str(minigame.get("scene")))
+		if not minigame.get("config") is Dictionary: return _fail("minigames", pointer, "缺少参数 config")
+		var type_flag := "minigame." + str(id) + ".type"
+		var score_flag := "minigame." + str(id) + ".score"
+		if not bundle.flags.has(type_flag) or not bundle.flags.has(score_flag):
+			return _fail("minigames", pointer, "缺少结果声明：" + type_flag + " 与 " + score_flag)
+		var values: Variant = bundle.flags[type_flag].get("values")
+		if not values is Array:
+			return _fail("minigames", pointer, type_flag + " 必须声明 values（结果类型词表）")
+		for type in MiniGameResult.TYPES:
+			if not type in values:
+				return _fail("minigames", pointer, type_flag + " 少了结果类型：" + type)
+	return true
+
 ## 指令流剧情（stories.json）的校验：结构 + 引用 + 指令参数。
 ##
 ## 这里**只校验，不改写**：剧情数据进来是什么形状，执行器读到的就是什么形状。
@@ -339,6 +370,10 @@ func _validate_story_step(command: String, argument: Variant, pointer: String, n
 		"sequence":
 			if not argument is String or not bundle.sequences.has(argument):
 				return _fail("stories", pointer + "/sequence", "未知演出：" + str(argument))
+			return true
+		"minigame":
+			if not argument is String or not bundle.minigames.has(argument):
+				return _fail("stories", pointer + "/minigame", "未知小游戏：" + str(argument))
 			return true
 		"goto":
 			return _check_story_node(argument, pointer + "/goto", nodes)

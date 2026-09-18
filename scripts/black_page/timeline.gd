@@ -1,5 +1,6 @@
 extends "res://scripts/core/minigame.gd"
-## 时间轴小游戏。契约：begin(config, flags) 起，完成后 emit completed({success: true})。
+## 时间轴小游戏。契约：begin(config, flags) 起，完成后 emit completed(结果)，
+## 结果形状走 MiniGameResult 的 {type, score, data}。
 var order: Array = []
 var selected: Array = []
 var buttons: Array[Button] = []
@@ -34,4 +35,4 @@ func _select(index: int) -> void:
 	selected.append(index)
 	buttons[index].disabled = true
 	status.text = "已接回 %d 段画面。" % selected.size()
-	if selected.size() == order.size(): finish({"success": true})
+	if selected.size() == order.size(): finish({"type": "success", "score": 100})

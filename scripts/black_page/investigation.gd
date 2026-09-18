@@ -4,6 +4,8 @@ signal changed
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 const SaveManager = preload("res://scripts/core/save_manager.gd")
+## 小游戏结果的词表和形状（normalize / passed）在这里只有这一份。
+const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
 ## 存档槽名只在这里出现一次：写、读、「有没有存档」都走它。
 const SLOT := "black_page_slot_1"
 var bundle: Dictionary = {}
@@ -121,6 +123,23 @@ func _grant_clue(candidate: Dictionary, id: String) -> bool:
 	_apply(candidate, bundle.clues[id].get("effects", {}))
 	return true
 
+## 记录一局小游戏的结果（打完 / 中途退出都算，退出记 cancelled）。
+##
+## **小游戏不决定剧情**（设计文档 §9.3）：这里只把「打成什么样」落进
+## `minigame.<id>.type` / `.score`，给什么由剧情用 if 查、由结算用 passed() 判。
+## 每次打完都覆盖——记的是「最近一局」；重试就是把上次的记录改掉。
+func note_minigame(id: String, raw: Variant) -> String:
+	if not bundle.minigames.has(id): return "未知小游戏：" + id
+	var result: Dictionary = MiniGameResult.normalize(raw)
+	var candidate := GameState.snapshot()
+	candidate.flags["minigame." + id + ".type"] = result.type
+	candidate.flags["minigame." + id + ".score"] = result.score
+	var error: String = GameState.validate_snapshot(candidate)
+	if not error.is_empty(): return error
+	GameState.restore(candidate)
+	changed.emit()
+	return ""
+
 func available(id: String) -> bool:
 	if not bundle.actions.has(id) or flag("ending") != "": return false
 	return not flag("action." + id + ".done") and matches(bundle.actions[id].get("requires", []))
@@ -140,12 +159,16 @@ func cancel_action() -> void:
 ## 提交一次调查。**除了「可以重试」的中断，任何失败路径都不许把行动锁留在身上**——
 ## 锁不释放，玩家就卡在「不能开始新调查、不能存档、不能重载数据」的死角里，
 ## 只有重新开始能出去。所以每个 return 之前都问一句：锁放了吗？
-func complete_action(token: int, result: Dictionary = {}) -> String:
+##
+## 小游戏的结果不从参数进来：打完时它已经落进状态（note_minigame），
+## 这里读 `minigame.<id>.type` 判断——状态是唯一真相源，谁调都一样。
+func complete_action(token: int) -> String:
 	if token != ticket or active_action.is_empty(): return "调查回调已过期。"
 	var id := active_action
 	var action: Dictionary = bundle.actions[id]
-	# 小游戏没做完可以重试：弹层还开着，锁留着不碍事。
-	if action.kind == "minigame" and result.get("success") != true: return "尚未完成还原；可以重试或返回。"
+	# 小游戏没通过可以重试：弹层还开着，锁留着不碍事。
+	if action.kind == "minigame" and not MiniGameResult.passed(str(flag("minigame." + str(action.minigame) + ".type"))):
+		return "小游戏还没通过；可以重试或返回。"
 	if not available(id):
 		# 状态零变化，只是这条方向不能走了——锁放掉，让玩家能继续。
 		cancel_action()

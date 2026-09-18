@@ -2,20 +2,7 @@
   "camera": {
     "name": "还原公交站监控",
     "kind": "minigame",
-    "scene": "res://scenes/black_page/timeline.tscn",
-    "config": {
-      "prompt": "按发生时间依次选择片段。",
-      "segments": [
-        "23:46  两人离开公交站",
-        "23:38  许妍离开便利店",
-        "23:42  灰衣男人到达站台"
-      ],
-      "order": [
-        1,
-        2,
-        0
-      ]
-    },
+    "minigame": "monitor_rebuild",
     "case": "missing",
     "requires": [],
     "clues": [
