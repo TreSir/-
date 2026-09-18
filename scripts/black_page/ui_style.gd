@@ -68,15 +68,32 @@ const TRANSITION_OUT := 0.26
 const TRANSITION_IN := 0.42
 
 # ── 字体 ────────────────────────────────────────────────────────────────
+## 剧情正文字体：随游戏分发的「怨霊」（暗黒工房 v2.0，assets/fonts/onryou.ttf）。
+## 只给剧情正文用（对话框 / 回顾），界面控件保持系统字体。
+##
+## 它是日文字体，只收 JIS 第一/第二水準——正文里约五分之一的简体字
+## （东 / 门 / 页 / 说 …）不在字集里，缺字挂到 sans() 的系统链上兜底，
+## 不会出豆腐块。授权与获取方式见 assets/fonts/README.md。
+const STORY_FONT := preload("res://assets/fonts/onryou.ttf")
+
+## 系统无衬线链：界面字体，也是 STORY_FONT 的兜底层。
 static func sans() -> SystemFont:
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", "sans-serif"])
 	return font
 
+## 标题字体（衬线）：logo 与 heading() 用。
 static func serif() -> SystemFont:
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", "serif"])
 	font.font_italic = false
+	return font
+
+## 剧情正文入口：换字体只动 STORY_FONT 一处。
+static func story() -> FontFile:
+	var font: FontFile = STORY_FONT
+	var chain: Array[Font] = [sans()]
+	font.fallbacks = chain
 	return font
 
 # ── StyleBox 工厂 ───────────────────────────────────────────────────────

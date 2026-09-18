@@ -404,6 +404,7 @@ func _build_shell() -> void:
 	margin.add_child(scroll)
 
 	notice = UI.flow("", UI.SIZE_UI, Color("dae6ec"))
+	notice.add_theme_font_override("font", UI.story())
 	scroll.add_child(notice)
 
 func _process(delta: float) -> void:
@@ -1478,7 +1479,9 @@ func _open_history() -> void:
 		modal_rows.add_child(UI.flow("还没有看过任何文字。", UI.SIZE_BODY, UI.TEXT_DIM))
 	else:
 		for index in range(_history.size() - 1, -1, -1):
-			modal_rows.add_child(UI.flow(str(_history[index]), UI.SIZE_BODY, Color("c6d5dd")))
+			var line := UI.flow(str(_history[index]), UI.SIZE_BODY, Color("c6d5dd"))
+			line.add_theme_font_override("font", UI.story())
+			modal_rows.add_child(line)
 	_end_panel("合上回顾")
 
 func _open_clues() -> void:
