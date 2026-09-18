@@ -96,6 +96,10 @@
     "type": "bool",
     "default": false
   },
+  "story.chapter1_open.done": {
+    "type": "bool",
+    "default": false
+  },
   "person.zhou.identity": {
     "type": "int",
     "default": 20,

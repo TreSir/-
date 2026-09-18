@@ -1,0 +1,39 @@
+{
+  "chapter1_open": {
+    "name": "第一章开场",
+    "start": "start",
+    "nodes": {
+      "start": {
+        "steps": [
+          {
+            "if": {
+              "requires": [
+                {
+                  "flag": "story.chapter1_open.done",
+                  "value": false
+                }
+              ],
+              "then": "morning"
+            }
+          }
+        ]
+      },
+      "morning": {
+        "steps": [
+          {
+            "effect": {
+              "set": {
+                "story.chapter1_open.done": true
+              }
+            }
+          },
+          {
+            "say": [
+              "天亮了。雨没有停，只是比昨夜小了些。\n许妍的电话断掉之后，你再也没能联系上她。\n桌上的黑色笔记安静地放着。你还没有想清楚它到底是什么——但昨夜确实发生过。"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

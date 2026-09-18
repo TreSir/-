@@ -150,21 +150,27 @@
 > `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
 > 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（8 个）
+### `scripts/core/` —— 与内容无关的机制（10 个）
 
 | 文件 | 职责 |
 | --- | --- |
-| `rules.gd` | 纯函数式的旗标规则求值。`data_loader` / `investigation` / `game_state` 共用 |
+| `rules.gd` | 纯函数式的旗标规则求值（含快照体检）。`data_loader` / `investigation` / `game_state` / `save_manager` 共用 |
 | `json_source.gd` | JSON 读取 + source map（报错能定位到文件与行号） |
-| `save_store.gd` | 存档文件读写 |
+| `save_store.gd` | 存档文件读写（盘上的字节） |
+| `save_manager.gd` | **存档的形状**：打包 / 校验 / 写读。静态函数，不持有状态——「什么时候能存」是 investigation 的规矩 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
-| `scripted.gd` | **剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
+| `scripted.gd` | **页数组剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
+| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto`；表现回调由调用方注入 |
 | `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
 | `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
 | `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
 
 > `scripted.gd` 的剧本从**调用方注入**（序章由 `main.gd` 注入 `bundle.prologue`），
 > 写状态走 `game.apply_state()`——引擎本身不认识「序章」这个词。
+>
+> `narrative_runner.gd` 同理：剧情从 `game.bundle.stories` 读，台词怎么演由注入的
+> `display` 回调决定，状态写入走 `game.apply_effects()` / `add_clue()` / `apply_state()`。
+> **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）。
 
 ---
 
@@ -179,8 +185,10 @@
 | `core/rules.gd` 条件求值 | `investigation.gd` 三次行动 / 落笔 / 侵蚀度 |
 | `core/json_source.gd` JSON + 行号 | `ui_style.gd` 颜色字号（这是黑页的视觉语言） |
 | `core/save_store.gd` 存档读写 | `scenes.gd` 场景表 |
-| `core/typewriter.gd` 逐字显示 | `hotspots.gd` 的热区表 |
-| `core/hotspot_layer.gd` UV 热区层 | `main.gd` / `scripted.gd` 的演出 |
+| `core/save_manager.gd` 存档打包与校验 | `hotspots.gd` 的热区表 |
+| `core/typewriter.gd` 逐字显示 | `main.gd` / `scripted.gd` 的演出 |
+| `core/hotspot_layer.gd` UV 热区层 | `stories.json` 里的剧情段落（黑页的故事） |
+| `core/narrative_runner.gd` 指令流执行器 | — |
 | `core/minigame.gd` 小游戏契约 | — |
 | `services/game_state.gd` 强类型状态 | — |
 | `services/event_bus.gd` 事件总线 | — |
@@ -228,7 +236,8 @@ data/black_page/*.json
    bundle（内存字典）
       │
       ├──▶ investigation.gd    （读 bundle 判断与结算）
-      ├──▶ core/scripted.gd    （剧本引擎；序章由 main 注入 bundle.prologue 后开演）
+      ├──▶ core/scripted.gd    （页数组剧本引擎；序章由 main 注入 bundle.prologue 后开演）
+      ├──▶ core/narrative_runner.gd （指令流剧情；main 注入 game 与表现回调后开播）
       └──▶ main.gd             （读 bundle 画界面）
       │
       ▼
@@ -268,7 +277,10 @@ data/black_page/*.json
 | `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
 | `end_day()` | 结束一天，兑现所有 pending | 事务式，失败则状态零变化 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
-| `reveal_ui(keys)` / `apply_state(changes)` | 点亮侧栏入口 / 剧情写状态 | 给「非行动」的脚本化段落用 |
+| `reveal_ui(keys)` / `apply_state(changes)` | 点亮侧栏入口 / 剧情写状态（纯 `set`） | 给「非行动」的脚本化段落用 |
+| `apply_effects(effects)` | 剧情写状态（完整 `set` / `add` / `inventory`） | 指令流剧情执行器走这个 |
+| `add_clue(id)` | 给一条线索（已有则跳过，重复执行无害） | 同上 |
+| `log_narrative(text)` | 剧情正文进日志（**只记不广播**，避免和正在打的字打架） | 同上 |
 | `reload_data()` | F6 热重载 | 被拒绝时返回原因 |
 
 **界面需要新能力时：先在 `investigation` 上加方法，不要在界面里绕过它。**
@@ -309,7 +321,8 @@ ui.<key>                       ← 侧栏入口是否点亮
 | `endings.json` | 结局。**必须有且仅有一个无条件兜底，且优先级最低** |
 | `codex.json` | 人物图鉴的档案条目（每条带 `at` 阈值） |
 | `transitions.json` | 转场（`cut` / `fade` / `slide`；优先级 **单条行动 > 目标场景 > 全局默认**） |
-| `prologue.json` | 序章剧本 |
+| `prologue.json` | 序章剧本（页数组：背景 / 卡片 / 热区 / 选项） |
+| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转） |
 
 ---
 
@@ -373,7 +386,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 
 ---
 
-## 八、序章的演出组件
+## 八、剧情演出的组件与引擎分工
 
 序章不走「行动」那套，用一套**声明式演出**（`prologue.json` 的每页字段）：
 
@@ -421,28 +434,69 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 
 ---
 
-### 两套叙事引擎怎么选（职责边界）
+### 三个叙事引擎怎么选（职责边界）
 
-项目里有两个"念文字"的东西，**场景切换不是它们的区别**——
-转场是 main 的转场系统，两边都触发（调查切场景、剧本每页换背景）。
+项目里有三个"念文字"的东西，**场景切换不是它们的区别**——
+转场是 main 的转场系统，哪边都触发（调查切场景、剧本每页换背景）。
 
-| | `_say` 叙述流（main 内） | `core/scripted.gd` 剧本引擎 |
-| --- | --- | --- |
-| 场景/背景 | **一次**（进调查时切过去） | **每页都可以不一样** |
-| 玩家能做的事 | 没有——纯读 | **有**——点热区、做选择 |
-| 内容粒度 | 句子（只有文字 + 说话人） | 页（文字+素材+交互+音乐+状态写入） |
-| 读完之后 | **绑定结算**（扣行动，回房间） | 发 `finished`，去哪由调用方定 |
+| | `_say` 叙述流（main 内） | `core/scripted.gd` 页数组 | `core/narrative_runner.gd` 指令流 |
+| --- | --- | --- | --- |
+| 场景/背景 | **一次**（进调查时切过去） | **每页都可以不一样** | 不碰背景（在房间上念） |
+| 玩家能做的事 | 没有——纯读 | **有**——点热区、做选择 | 没有——走向由指令自己定 |
+| 内容粒度 | 句子（只有文字 + 说话人） | 页（文字+素材+交互+音乐+状态写入） | 指令步（说 / 写状态 / 给线索 / 条件跳转） |
+| 作者写的形状 | — | 一页一页的画面 | 先做什么、再做什么 |
+| 读完之后 | **绑定结算**（扣行动，回房间） | 发 `finished`，去哪由调用方定 | 发 `finished`，去哪由调用方定 |
+| 数据 | — | `prologue.json` | `stories.json` |
 
 **选择规则（一句话）**：
 
 > 这一段里玩家需要「做事」（点东西、做选择、每页换素材）吗？
-> **要 → Scripted；纯读、读完要结算 → `_say`。**
+> **要 → Scripted。不要、但它是「按顺序发生的一串事」（说几句 → 写状态 → 跳一段）
+> → Runner。都不要（纯读、读完要结算）→ `_say`。**
 
 注意：Scripted 里的**普通页**（没配热区/卡片/选项）看起来就和 `_say` 一样——
 分段、逐字、自动、跳过、速度全部对齐，玩家两边手感一致 ✓ 这是**有意的**。
+Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 
 零件全部共享：打字机、热区层、回顾记录、UI 工厂、音乐音效接口 ✓
 **零件共享，引擎分工**——不要为了"少一个引擎"把它们合并（会造出参数怪兽）。
+
+### 指令流剧情（stories.json）的写法
+
+一段剧情 = 一个对象：`start` 是入口节点，节点里是**一串指令步**（一步一条指令）。
+
+```json
+"chapter1_open": {
+  "name": "第一章开场",
+  "start": "start",
+  "nodes": {
+    "start":   { "steps": [{"if": {"requires": [{"flag": "story.chapter1_open.done", "value": false}, "then": "morning"}}] },
+    "morning": { "steps": [{"effect": {"set": {"story.chapter1_open.done": true}}}, {"say": ["天亮了。…"]}] }
+  }
+}
+```
+
+| 指令 | 参数 | 做什么 |
+| --- | --- | --- |
+| `say` | 字符串 / 字符串数组 | 台词：先记进日志（回看要有），再交给表现层逐句演，演完继续 |
+| `effect` | effects 对象（`set` / `add` / `inventory`） | 写状态（`game.apply_effects`） |
+| `clue` | 线索 id | 给线索（已有则跳过，重复执行无害） |
+| `unlock` | 人物 id | 点亮人物（`person.<id>.discovered = true`） |
+| `if` | `{requires, then, else?}` | 条件成立跳 `then`；不成立跳 `else`（没写就继续下一步） |
+| `goto` | 节点名 | 无条件跳 |
+
+**没有 `end` 指令**：节点跑完 = 剧情结束，发 `finished`。
+
+几条约定，都是踩过坑的：
+
+- **指令名就是执行器的 `COMMANDS` 表**，`data_loader` 照着它校验——
+  数据里写错指令名**在编译期**报出来（带文件与行号），不会等到运行时才静默跳过。
+  加一种指令 = 改执行器一处（`COMMANDS` + `_run` 的 `match`），编译器自动跟上。
+- **闸门写在数据里**：剧情要不要重播，用 `if` 查自己的 `story.<id>.done` 旗标，
+  不在界面里特判（开场白就是这么做的）。
+- **`effect` 写在 `say` 之前**：读到一半退出、读档回来时「已播过」已经记下了，
+  不会把整段再重播一遍。
+- `goto` 成环不可怕：执行器有步数上限（到顶告警收尾），有测试守着。
 
 ---
 
@@ -477,7 +531,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 109 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 122 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -487,7 +541,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (109 checks)
+# 期望输出：BLACK_PAGE: PASS (122 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -497,7 +551,7 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
 测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败），改测试时让它贴着当前数。
-**验收标准是 `PASS (109 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (122 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -562,6 +616,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 要加什么 | 动哪里 | 机器守着 |
 | --- | --- | --- |
 | 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
+| 一段指令流剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
 | 一条调查方向 | `actions.json` | ✓ 引用校验 |
 | 一条线索 / 一个人 / 一个案件 / 一个结局 / 一个事件 | 对应的 JSON | ✓ 跨文件引用校验 |
 | 一条人物档案条目 | `codex.json` | ✓ |
@@ -573,6 +628,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 要加什么 | 动哪里 | 处数 | 机器守着 |
 | --- | --- | --- | --- |
 | **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
+| **一种剧情指令** | `core/narrative_runner.gd` 的 **`COMMANDS` 表 + `_run` 的 match** | **1 处**（校验读同一张表） | ✓ 未知指令在编译期报错 |
 | 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
@@ -593,6 +649,9 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 修完之后加了「表里每个字段都必须出现在编译结果里」这条断言——
 **守的是「校验和拷贝读同一张表」这个性质本身**，而不是某个字段是否存在。
 
+同一课后来用在剧情指令上：`data_loader` 校验指令名时**直接读执行器的 `COMMANDS` 表**，
+不自己抄一份——抄一份就会重演「数据写了、引擎不认识」。
+
 ---
 
 ## 十三、这份文档怎么维护
@@ -610,11 +669,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (109 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (122 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (109 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (122 checks)
 ```

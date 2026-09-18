@@ -1,6 +1,7 @@
 extends Node
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Loader = preload("res://scripts/black_page/data_loader.gd")
+const Runner = preload("res://scripts/core/narrative_runner.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
@@ -8,7 +9,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 105
+const UI_CHECK_FLOOR := 118
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -151,6 +152,69 @@ func _run() -> void:
 	var token: int = game.ticket
 	game.cancel_action()
 	check(not game.complete_action(token, {"success": true}).is_empty() and not game.owns("camera"), "stale callback cannot grant rewards")
+
+	# ── 叙事执行器（stories.json）的契约 ─────────────────────────────────
+	# 临时剧情挂在**真实 game** 上跑（不是另起一套 mock）：六种指令全走一遍。
+	# 打完就删——测试数据不进游戏内容；状态回滚到检查点，不干扰后面的用例。
+	game.bundle.stories.smoke_gate_on = {
+		"name": "契约·走 then",
+		"start": "gate",
+		"nodes": {
+			"gate": {"steps": [{"if": {
+				"requires": [{"flag": "day", "op": ">=", "value": 1}],
+				"then": "grant", "else": "quiet"}}]},
+			"quiet": {"steps": [{"effect": {"set": {"linmo_suspicion": 9}}}]},
+			"grant": {"steps": [
+				{"effect": {"add": {"linmo_trust": 5}}},
+				{"clue": "camera"},
+				{"unlock": "linmo"},
+				{"goto": "talk"}]},
+			"talk": {"steps": [{"say": ["契约台词一", "契约台词二"]}]},
+		},
+	}
+	game.bundle.stories.smoke_gate_off = {
+		"name": "契约·走 else",
+		"start": "gate",
+		"nodes": {
+			"gate": {"steps": [{"if": {
+				"requires": [{"flag": "day", "op": ">=", "value": 99}],
+				"then": "grant", "else": "quiet"}}]},
+			"grant": {"steps": [{"effect": {"set": {"linmo_trust": 1}}}]},
+			"quiet": {"steps": [
+				{"effect": {"set": {"linmo_suspicion": 7}}},
+				{"say": "契约台词（else）"}]},
+		},
+	}
+	game.bundle.stories.smoke_loop = {
+		"name": "契约·绕圈",
+		"start": "hole",
+		"nodes": {"hole": {"steps": [{"goto": "hole"}]}},
+	}
+	var contract_checkpoint: Dictionary = game.snapshot()
+	var runner = Runner.new()
+	var spoken: Array = []
+	runner.game = game
+	runner.display = func(lines: Array, done: Callable):
+		spoken.append_array(lines)
+		done.call()
+	check(runner.play("smoke_gate_on").is_empty() and spoken == ["契约台词一", "契约台词二"],
+		"runner walks if → effect → clue → unlock → goto → say")
+	check(int(game.flag("linmo_trust")) == 35 and game.owns("camera") and game.person_flag("linmo", "discovered") == true,
+		"runner writes state only through the game facade")
+	check(runner.play("smoke_gate_off").is_empty() and int(game.flag("linmo_suspicion")) == 7,
+		"runner takes the else branch when conditions fail")
+	# 没有表现回调也要跑完：台词只进日志不演出，但不能卡住剧情。
+	runner.display = Callable()
+	var logged: int = game.journal.size()
+	check(runner.play("smoke_gate_off").is_empty() and game.journal.size() == logged + 1,
+		"say without a display still logs and moves on")
+	check(runner.play("smoke_loop").contains("上限"),
+		"runaway story stops at the step limit instead of hanging")
+	check(game.restore(contract_checkpoint).is_empty(), "contract story state rolls back")
+	game.bundle.stories.erase("smoke_gate_on")
+	game.bundle.stories.erase("smoke_gate_off")
+	game.bundle.stories.erase("smoke_loop")
+
 	var loader = Loader.new()
 	var compiled: Dictionary = loader.compile()
 	# ★ 字段表驱动的**结构性断言**：表里声明的每个字段，都必须真的出现在编译结果里。
@@ -175,6 +239,20 @@ func _run() -> void:
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")
+	# 剧情数据（stories.json）的校验：引用错 / 未知指令 / 效果写错旗标，
+	# 都要在**编译期**带文件位置报出来——不能等到运行时才静默跳过那一步。
+	var broken: Dictionary = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"goto": "nowhere"}]
+	check(not loader._compile_stories(broken) and loader.error.contains("stories.json:") and loader.error.contains("nowhere"),
+		"story node reference error has source location")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"dance": 1}]
+	check(not loader._compile_stories(broken) and loader.error.contains("未知指令"),
+		"unknown story command is rejected at compile time")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"effect": {"set": {"no_such_flag": 1}}}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
+		"story effect references are validated")
 	await _ui()
 	# 检查数本身就是一道门槛。
 	# 有解析错误时，后面的 check 会静默地不执行，而 PASS/FAIL 只看 failures ——
@@ -188,6 +266,7 @@ func _ui() -> void:
 	add_child(ui)
 	await get_tree().process_frame
 	check(is_instance_valid(ui.launch) and not ui._hud_layer.visible, "launch page gates game")
+	# 截图必须去掉 --headless 跑：dummy 渲染器不会发 frame_post_draw，会永远卡在下一句上。
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(2.9).timeout
 		await RenderingServer.frame_post_draw
@@ -285,6 +364,20 @@ func _ui() -> void:
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_chapter.png")
 	await get_tree().create_timer(1.6).timeout
 	check(not is_instance_valid(ui.scripted) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
+	# 开场白现在是**数据剧情**（stories.json 的 chapter1_open）：经由执行器播出来，
+	# 正文落进日志，「已播过」写进旗标——以前这段字硬编码在 investigation.new_game() 里。
+	check(ui.game.flag("story.chapter1_open.done"), "the opening story marks itself done through the game facade")
+	check(is_instance_valid(ui.story) and ui.story.story_id == "chapter1_open", "the opener goes through the narrative runner")
+	check(not ui.game.journal.is_empty() and str(ui.game.journal[0]).contains("天亮了"),
+		"opening text comes from stories.json and lands in the journal")
+	# 读完这一句（第一下补完打字、第二下翻过它），再重播一次：
+	# 已经播过的剧情**不再重播**，闸门是剧情数据自己的 if，不是界面里的特判。
+	ui._advance_story()
+	ui._advance_story()
+	var journal_size: int = ui.game.journal.size()
+	ui._play_story("chapter1_open")
+	await get_tree().process_frame
+	check(ui.game.journal.size() == journal_size, "a finished story does not replay its text")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
 	# 顶栏行动点跟着数据声明走（flags.json 的 actions_left.max），不是写死的 3——
 	# 改每日行动数只动数据，这里会跟着增减。

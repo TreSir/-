@@ -21,16 +21,8 @@ func reset() -> void:
 func validate_snapshot(snapshot: Dictionary, defs: Variant = null, items: Variant = null) -> String:
 	if defs == null: defs = definitions
 	if items == null: items = catalog
-	if not snapshot.get("flags") is Dictionary or not snapshot.get("inventory") is Dictionary: return "状态快照格式错误"
-	for id in snapshot.flags:
-		if not defs.has(id): return "存档有未声明 Flag：" + str(id)
-		var error: String = Rules.value_error(snapshot.flags[id], defs[id])
-		if not error.is_empty(): return str(id) + "：" + error
-	for id in snapshot.inventory:
-		if not items.get("items", {}).has(id): return "存档有未知道具：" + str(id)
-		var count: Variant = snapshot.inventory[id]
-		if not Rules.integer(count) or count <= 0 or count > items.items[id].get("max_stack", 99): return "非法道具数量：" + str(id)
-	return ""
+	# 体检标准在 Rules 里：save_manager 也要用同一份，而它不碰 GameState。
+	return Rules.snapshot_error(snapshot, defs, items)
 
 func snapshot() -> Dictionary:
 	return {"flags": flags.duplicate(true), "inventory": inventory.duplicate(true)}

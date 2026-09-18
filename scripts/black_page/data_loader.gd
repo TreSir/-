@@ -2,6 +2,8 @@ extends RefCounted
 ## 把 data/black_page/*.json 编译成 bundle：字段校验 + 跨文件引用检查 + 规范化。
 const Source = preload("res://scripts/core/json_source.gd")
 const Rules = preload("res://scripts/core/rules.gd")
+## 指令流剧情的校验要照着**执行器认识的指令表**来：加指令只改执行器一处，这里自动跟上。
+const Runner = preload("res://scripts/core/narrative_runner.gd")
 var sources: Dictionary = {}
 var error := ""
 
@@ -9,7 +11,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
 	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}}}
-	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue"]:
+	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "stories"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
 		sources[name] = source
@@ -76,6 +78,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	if not result.endings.back().get("requires", []).is_empty():
 		_fail("endings", "", "兜底结局必须具有最低优先级")
 		return {}
+	if not _compile_stories(result): return {}
 	return result
 
 func _validate_row(group: String, id: String, row: Dictionary, bundle: Dictionary) -> bool:
@@ -225,6 +228,84 @@ func _compile_prologue(raw: Variant) -> Array:
 	if out.is_empty():
 		_fail("prologue", "", "没有任何有效页")
 	return out
+
+## 指令流剧情（stories.json）的校验：结构 + 引用 + 指令参数。
+##
+## 这里**只校验，不改写**：剧情数据进来是什么形状，执行器读到的就是什么形状。
+## 指令名读执行器的 COMMANDS（见 narrative_runner.gd）——不认识就报错，
+## 不让「数据写了、引擎不认」的步骤活到运行时才静默跳过。
+func _compile_stories(bundle: Dictionary) -> bool:
+	for id in bundle.stories:
+		var story: Variant = bundle.stories[id]
+		var pointer := "/" + str(id)
+		if not story is Dictionary: return _fail("stories", pointer, "剧情必须为对象")
+		if not story.get("name") is String: return _fail("stories", pointer, "缺少 name")
+		if not story.get("start") is String: return _fail("stories", pointer, "缺少 start")
+		var nodes: Variant = story.get("nodes")
+		if not nodes is Dictionary or (nodes as Dictionary).is_empty():
+			return _fail("stories", pointer, "缺少 nodes")
+		if not nodes.has(story.start): return _fail("stories", pointer + "/start", "start 指向不存在的节点：" + str(story.start))
+		for node_id in nodes:
+			var node: Variant = nodes[node_id]
+			var node_pointer := pointer + "/nodes/" + str(node_id)
+			if not node is Dictionary or not node.get("steps") is Array:
+				return _fail("stories", node_pointer, "节点缺少 steps 数组")
+			var steps: Array = node.steps
+			for index in steps.size():
+				var step: Variant = steps[index]
+				var step_pointer := node_pointer + "/steps/" + str(index)
+				if not step is Dictionary or (step as Dictionary).is_empty():
+					return _fail("stories", step_pointer, "步骤必须是一个非空对象")
+				if (step as Dictionary).size() != 1:
+					return _fail("stories", step_pointer, "一步只能有一条指令")
+				var command := str((step as Dictionary).keys()[0])
+				if not command in Runner.COMMANDS:
+					return _fail("stories", step_pointer, "未知指令「%s」，可用：%s" % [command, ", ".join(Runner.COMMANDS)])
+				if not _validate_story_step(command, step[command], step_pointer, nodes, bundle): return false
+	return true
+
+func _validate_story_step(command: String, argument: Variant, pointer: String, nodes: Dictionary, bundle: Dictionary) -> bool:
+	match command:
+		"say":
+			if argument is String: return true
+			if argument is Array and not (argument as Array).is_empty():
+				for line in argument:
+					if not line is String: return _fail("stories", pointer + "/say", "台词必须是字符串")
+				return true
+			return _fail("stories", pointer + "/say", "台词必须是字符串或字符串数组")
+		"effect":
+			var message: String = Rules.effects_error(argument, bundle.flags, bundle.catalog)
+			if not message.is_empty(): return _fail("stories", pointer + "/effect", message)
+			return true
+		"clue":
+			if not argument is String or not bundle.clues.has(argument):
+				return _fail("stories", pointer + "/clue", "未知线索：" + str(argument))
+			return true
+		"unlock":
+			if not argument is String or not bundle.people.has(argument):
+				return _fail("stories", pointer + "/unlock", "未知人物：" + str(argument))
+			return true
+		"goto":
+			return _check_story_node(argument, pointer + "/goto", nodes)
+		"if":
+			if not argument is Dictionary: return _fail("stories", pointer + "/if", "if 必须为对象")
+			var condition: Dictionary = argument
+			for key in condition:
+				if key not in ["requires", "then", "else"]: return _fail("stories", pointer + "/if", "未知字段：" + str(key))
+			var message: String = Rules.conditions_error(condition.get("requires", []), bundle.flags, bundle.catalog)
+			if not message.is_empty(): return _fail("stories", pointer + "/if/requires", message)
+			if not condition.get("then") is String: return _fail("stories", pointer + "/if", "缺少 then")
+			if not _check_story_node(condition.then, pointer + "/if/then", nodes): return false
+			if condition.has("else"):
+				if not condition.else is String: return _fail("stories", pointer + "/if/else", "else 必须是节点名")
+				if not _check_story_node(condition.else, pointer + "/if/else", nodes): return false
+			return true
+	return true
+
+func _check_story_node(target: Variant, pointer: String, nodes: Dictionary) -> bool:
+	if not target is String or not nodes.has(target):
+		return _fail("stories", pointer, "指向不存在的节点：" + str(target))
+	return true
 
 func _fail(group: String, pointer: String, message: String) -> bool:
 	error = sources[group].diagnostic(pointer, message)

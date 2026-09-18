@@ -3,7 +3,7 @@ extends Node
 signal changed
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Rules = preload("res://scripts/core/rules.gd")
-const Store = preload("res://scripts/core/save_store.gd")
+const SaveManager = preload("res://scripts/core/save_manager.gd")
 ## 存档槽名只在这里出现一次：写、读、「有没有存档」都走它。
 const SLOT := "black_page_slot_1"
 var bundle: Dictionary = {}
@@ -26,9 +26,10 @@ func new_game() -> void:
 	ticket += 1
 	active_action = ""
 	pending.clear()
-	# 与序章结尾直接衔接：许妍凌晨那通电话断了之后，你没能再联系上她。
-	# 这里不再提「林墨发来资料」——林墨在第一章里还没登场，资料也不是他送来的。
-	journal = ["天亮了。雨没有停，只是比昨夜小了些。\n许妍的电话断掉之后，你再也没能联系上她。\n桌上的黑色笔记安静地放着。你还没有想清楚它到底是什么——但昨夜确实发生过。"]
+	# 日志留空：开场正文**是剧情数据**（stories.json 的 chapter1_open），
+	# 由叙事执行器播出来、顺手记进日志。这里不再硬编码文字——
+	# 改台词只改数据文件，代码不掺内容。
+	journal = []
 	GameState.reset()
 	changed.emit()
 
@@ -60,6 +61,20 @@ func apply_state(changes: Dictionary) -> String:
 	changed.emit()
 	return ""
 
+## 剧情 / 数据用的完整 effects 口子（set / add / inventory 三件套）。
+## apply_state 只收「纯 set」——那是最常用的一种；这里是全形态，给执行器用。
+func apply_effects(effects: Dictionary) -> String:
+	if effects.is_empty(): return ""
+	var error: String = GameState.apply(effects)
+	if not error.is_empty(): return error
+	changed.emit()
+	return ""
+
+## 剧情正文进日志。**只记不广播**：台词马上要演，广播会让界面先刷一次
+## 「最新一条」，和正在打的字打架；演完或状态变化时自然会刷新。
+func log_narrative(text: String) -> void:
+	_log(text)
+
 ## 只读的旗标快照，给需要整份状态的调用方（例如小游戏初始化）用。
 ## 界面走这个，不要直接摸 GameState。
 func flags_snapshot() -> Dictionary:
@@ -83,6 +98,28 @@ func clue_description(id: String) -> String:
 	for variant in clue.get("variants", []):
 		if matches(variant.get("requires", [])): return variant.description
 	return clue.description
+
+## 给一条线索（剧情模块用）。已有这条线索时静默跳过——
+## 剧情可能因为读档重播后半段，跳过让重复执行变成无害。
+func add_clue(id: String) -> String:
+	if not bundle.clues.has(id): return "未知线索：" + id
+	var candidate := GameState.snapshot()
+	if not _grant_clue(candidate, id): return ""
+	var error: String = GameState.validate_snapshot(candidate)
+	if not error.is_empty(): return error
+	GameState.restore(candidate)
+	_log("获得线索：" + str(bundle.clues[id].name))
+	changed.emit()
+	return ""
+
+## 把一条线索写进候选状态（含线索自带的 effects）。已有则不动，返回 false。
+## complete_action 和 add_clue 共用它：两处的语义必须一模一样，
+## 不许一边「已有就跳过」、另一边「已有也重写」。
+func _grant_clue(candidate: Dictionary, id: String) -> bool:
+	if candidate.inventory.has(id): return false
+	candidate.inventory[id] = 1
+	_apply(candidate, bundle.clues[id].get("effects", {}))
+	return true
 
 func available(id: String) -> bool:
 	if not bundle.actions.has(id) or flag("ending") != "": return false
@@ -116,9 +153,7 @@ func complete_action(token: int, result: Dictionary = {}) -> String:
 	var candidate := GameState.snapshot()
 	var gained: Array = []
 	for clue in action.clues:
-		if not candidate.inventory.has(clue):
-			candidate.inventory[clue] = 1
-			_apply(candidate, bundle.clues[clue].get("effects", {}))
+		if _grant_clue(candidate, clue):
 			gained.append(bundle.clues[clue].name)
 	_apply(candidate, action.get("effects", {}))
 	candidate.flags["action." + id + ".done"] = true
@@ -211,34 +246,16 @@ func _apply(candidate: Dictionary, effects: Dictionary) -> void:
 
 func _log(message: String) -> void:
 	journal.append(message)
-	if journal.size() > 100: journal.pop_front()
+	if journal.size() > SaveManager.JOURNAL_CAP: journal.pop_front()
 
 func snapshot() -> Dictionary:
-	return {"schema": 1, "content": "black_page_mvp", "state": GameState.snapshot(), "pending": pending.duplicate(true), "journal": journal.duplicate()}
+	return SaveManager.payload(GameState.snapshot(), pending, journal)
 
+## 存档格式的校验在 save_manager 里；这里只负责把「当前 bundle」补上——
+## 它不持有游戏数据，问不了 bundle。
 func validate_save(data: Dictionary, definitions: Dictionary, catalog: Dictionary, content: Dictionary = {}) -> String:
 	if content.is_empty(): content = bundle
-	if data.get("schema") != 1 or data.get("content") != "black_page_mvp": return "存档版本或游戏不匹配。"
-	if not data.get("state") is Dictionary or not data.get("pending") is Array or not data.get("journal") is Array: return "存档结构损坏。"
-	var error: String = GameState.validate_snapshot(data.state, definitions, catalog)
-	if not error.is_empty(): return error
-	var restored: Dictionary = {}
-	for id in definitions: restored[id] = definitions[id].default
-	restored.merge(data.state.flags, true)
-	if not str(restored.ending).is_empty():
-		var found := false
-		for ending in content.endings:
-			if ending.id == restored.ending: found = true
-		if not found: return "结局 ID 已不存在。"
-	if data.pending.size() > content.people.size() or data.journal.size() > 100: return "存档记录数量异常。"
-	var seen: Array = []
-	for entry in data.pending:
-		if not entry is Dictionary or not content.people.has(entry.get("person")) or not entry.get("valid") is bool or not entry.get("name") is String or not Rules.integer(entry.get("day")): return "落笔记录损坏。"
-		if entry.person in seen or entry.day != restored.day or restored["person." + entry.person + ".status"] == "dead" or restored.ending != "": return "落笔记录与世界状态冲突。"
-		seen.append(entry.person)
-	for message in data.journal:
-		if not message is String: return "日志格式错误。"
-	return ""
+	return SaveManager.validate(data, definitions, catalog, content)
 
 func restore(data: Dictionary) -> String:
 	var error := validate_save(data, bundle.flags, bundle.catalog)
@@ -252,10 +269,10 @@ func restore(data: Dictionary) -> String:
 
 func save_game() -> String:
 	if not active_action.is_empty(): return "调查结束后才能存档。"
-	return Store.new().write(SLOT, snapshot())
+	return SaveManager.write(SLOT, snapshot())
 
 func load_game() -> String:
-	var loaded: Dictionary = Store.new().read(SLOT)
+	var loaded: Dictionary = SaveManager.read(SLOT)
 	return str(loaded.error) if loaded.has("error") else restore(loaded.data)
 
 ## 有没有**真的能续**的存档。开始页据此决定要不要显示「继续游戏」——
@@ -264,7 +281,7 @@ func load_game() -> String:
 ## 开始页看不见的字幕带上，玩家会以为游戏坏了。
 ## slot 参数只为测试留口子，游戏里一律走默认槽位。
 func has_save(slot: String = SLOT) -> bool:
-	var loaded: Dictionary = Store.new().read(slot)
+	var loaded: Dictionary = SaveManager.read(slot)
 	if loaded.has("error"): return false
 	return validate_save(loaded.data, bundle.flags, bundle.catalog).is_empty()
 

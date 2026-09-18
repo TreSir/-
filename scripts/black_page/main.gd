@@ -20,6 +20,8 @@ extends Control
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Room = preload("res://scripts/black_page/room.gd")
 const Scripted = preload("res://scripts/core/scripted.gd")
+## 指令流剧情的执行器（第一章起）。序章那套是页数组演出，两者分工见 runner 的头注释。
+const Runner = preload("res://scripts/core/narrative_runner.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
 const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
@@ -61,6 +63,8 @@ var notice: Label
 var modal: Control
 var modal_rows: VBoxContainer
 var scripted: Scripted
+## 指令流剧情的执行器。一局一个、反复用；台词怎么演由 display 接到 `_say`。
+var story: Runner
 var launch: Launch
 var rain: RainAmbience
 var music: BgmPlayer
@@ -602,6 +606,17 @@ func _advance_story() -> void:
 		return
 	_show_next_beat()
 
+## 回房间的公共部分：收菜单、收弹层、把音乐拿回来、等转场走完。
+## 「剧情之后进房间」和「从哪回房间」都走它——两条路各写一份的话，
+## 漏一处就会出现「回来了但音乐没回来／弹层还挂着」。
+func _settle_into_room() -> void:
+	_close_menu()
+	_close_modal()
+	# 从「黑页时刻」回来，音乐拿回来（没淡出过的话 play_track 自己会早退）。
+	if is_instance_valid(music): music.play_track(AudioTracks.MUSIC_GAME)
+	_in_room = true
+	await _transition_to(Scenes.ROOM)
+
 ## 回房间。
 ##
 ## `note_*` 是为了修一个顺序坑：调用方想「回房间 + 显示一句提示」时，
@@ -609,21 +624,33 @@ func _advance_story() -> void:
 ## 所以提示要等转场结束、台词落下去之后再打，这里统一收口。
 func _enter_room(note_error: String = "", note_success: String = "") -> void:
 	if game.bundle.is_empty(): return
-	_close_menu()
-	_close_modal()
-	# 从「黑页时刻」回来，音乐拿回来（没淡出过的话 play_track 自己会早退）。
-	if is_instance_valid(music): music.play_track(AudioTracks.MUSIC_GAME)
-	_in_room = true
-	await _transition_to(Scenes.ROOM)
+	await _settle_into_room()
 	_say([_latest_line()])
 	if not note_error.is_empty() or not note_success.is_empty():
 		_message(note_error, note_success)
 
 ## 序章结束后走这里。序章自己已经把该解锁的入口写进状态（人物 / 口袋），
-## 案件和黑页要玩家在房间里碰实体才出现——所以这里只管进房间。
+## 案件和黑页要玩家在房间里碰实体才出现——所以这里只管进房间，
+## 再把开场的剧情段落（stories.json 的 chapter1_open）交给执行器播。
 func _reveal_game() -> void:
+	if game.bundle.is_empty(): return
 	_reveal_hud(true)
-	_enter_room()
+	await _settle_into_room()
+	# 底部台词先落到最新一条：剧情已经演过（读档回来）时也不空着。
+	refresh()
+	_play_story("chapter1_open")
+
+## 用指令流剧情播一段。执行器不认识 UI——
+## 台词怎么演由 `_say` 负责（display 回调），状态写入由 game 把关，
+## 界面在这里只是个「接线员」，自己不碰数据、不碰状态。
+func _play_story(story_id: String) -> void:
+	if not is_instance_valid(story):
+		story = Runner.new()
+		story.game = game
+		story.display = func(lines: Array, done: Callable): _say(lines, done)
+		story.finished.connect(refresh)
+	var error: String = story.play(story_id)
+	if not error.is_empty(): push_warning("剧情「%s」没播起来：%s" % [story_id, error])
 
 ## 把最近一条叙述性日志当成「当前台词」。
 func _latest_line() -> String:

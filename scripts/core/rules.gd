@@ -24,6 +24,23 @@ static func value_error(value: Variant, definition: Dictionary) -> String:
 	if definition.has("values") and not value in definition["values"]: return "不在允许值中"
 	return ""
 
+## 一整份状态快照的体检：旗标都在声明里、值都合法、道具数量在范围内。
+##
+## 放在这里而不是 GameState 里：这是**纯规则求值**（只吃 definitions / catalog），
+## 不碰任何持有中的状态。存档校验（save_manager）和还原（game_state.restore）
+## 因此共用同一份体检标准，也只写一次。
+static func snapshot_error(snapshot: Dictionary, definitions: Dictionary, catalog: Dictionary) -> String:
+	if not snapshot.get("flags") is Dictionary or not snapshot.get("inventory") is Dictionary: return "状态快照格式错误"
+	for id in snapshot.flags:
+		if not definitions.has(id): return "存档有未声明 Flag：" + str(id)
+		var error: String = value_error(snapshot.flags[id], definitions[id])
+		if not error.is_empty(): return str(id) + "：" + error
+	for id in snapshot.inventory:
+		if not catalog.get("items", {}).has(id): return "存档有未知道具：" + str(id)
+		var count: Variant = snapshot.inventory[id]
+		if not integer(count) or count <= 0 or count > catalog.items[id].get("max_stack", 99): return "非法道具数量：" + str(id)
+	return ""
+
 static func effects_error(effects: Variant, definitions: Dictionary, catalog: Dictionary) -> String:
 	if not effects is Dictionary: return "effects 必须为对象"
 	for field in effects:
