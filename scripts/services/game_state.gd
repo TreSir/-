@@ -17,9 +17,6 @@ func defaults() -> Dictionary:
 func reset() -> void:
 	flags = defaults()
 	inventory.clear()
-	EventBus.game_started.emit()
-	EventBus.flags_changed.emit()
-	EventBus.inventory_changed.emit()
 
 func validate_snapshot(snapshot: Dictionary, defs: Variant = null, items: Variant = null) -> String:
 	if defs == null: defs = definitions
@@ -44,8 +41,6 @@ func restore(snapshot: Dictionary) -> String:
 	flags = defaults()
 	flags.merge(snapshot.flags, true)
 	inventory = snapshot.inventory.duplicate(true)
-	EventBus.flags_changed.emit()
-	EventBus.inventory_changed.emit()
 	return ""
 
 func apply(effects: Dictionary) -> String:
@@ -60,9 +55,4 @@ func apply(effects: Dictionary) -> String:
 	error = validate_snapshot(candidate)
 	if not error.is_empty(): return error
 	restore(candidate)
-	for id in effects.get("inventory", {}):
-		if effects.inventory[id] > 0:
-			var item: Dictionary = catalog.items[id]
-			if item.has("entry"): EventBus.unlock_requested.emit(item.entry)
-	for id in effects.get("unlock", []): EventBus.unlock_requested.emit(id)
 	return ""

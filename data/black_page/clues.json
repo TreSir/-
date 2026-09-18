@@ -68,7 +68,16 @@
     "name": "许妍留下的证词",
     "type": "证词",
     "description": "“周文远在帮我躲起来。有人要拿走父亲留下的资料，那些人和恒生生物有关。不要把我的位置告诉他们。”",
-    "fallback_description": "旧手机留下半条语音：“别找陈……是我让他来的……”后半段已经损坏。你无法再确认她当时身在何处。",
+    "variants": [
+      {
+        "requires": [
+          {
+            "flag": "action.fallback.done"
+          }
+        ],
+        "description": "旧手机留下半条语音：“别找陈……是我让他来的……”后半段已经损坏。你无法再确认她当时身在何处。"
+      }
+    ],
     "case": "missing",
     "people": [
       "xu",

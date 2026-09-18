@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 95 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 109 项测试。
 
 ---
 
@@ -119,17 +119,16 @@
 
 ## 三、目录与职责
 
-### `scripts/black_page/` —— 黑页自己（13 个）
+### `scripts/black_page/` —— 黑页自己（12 个）
 
 | 文件 | 职责 | 关键约束 |
 | --- | --- | --- |
 | `main.gd` | 主界面。场景切换、底部对话、中央选项、侧栏、弹层、转场、输入分发 | 只调 `game.xxx()`；不读数据文件 |
-| `core/scripted.gd` | **剧本引擎**（系统级，不专属序章）。逐页推进，支持四种演出卡片；吃任意「页数组」 | 剧本从 `bundle.prologue` 拿；写状态走 `game.apply_state()` |
 | `investigation.gd` | **游戏逻辑中枢**。行动可用性、结算、落笔、结束一天、结局判定 | **唯一允许写 `GameState` 的地方** |
 | `data_loader.gd` | 编译 `data/black_page/*.json` → `bundle`；字段校验 + 跨文件引用检查 + 规范化 | 加数据文件必须同时改这里的加载列表 |
 | `ui_style.gd` | 视觉令牌 + 控件工厂。所有 UI 构件从这儿造 | 颜色/字号/间距只在这里定义 |
 | `scenes.gd` | 场景表：场景 id → 名称 + 贴图 | 加场景要同时配 `transitions.json` |
-| `hotspots.gd` | 房间背景上的可点热区（UV 比例） | `target` 必须能在 `main._hotspot_pressed` 里找到分支 |
+| `hotspots.gd` | 房间背景上的可点热区（UV 比例表） | UV→屏幕换算在 `core/hotspot_layer.gd`；`target` 必须能在 `main._hotspot_pressed` 里找到分支 |
 | `timeline.gd` | 监控排序小游戏 | 继承 `core/minigame.gd` |
 | `launch.gd` | 启动页 | — |
 | `room.gd` | 房间背景：正式插画 + 程序化雨丝/暗角 | 只管画面，热区归 `main.gd` |
@@ -146,8 +145,12 @@
 
 > 曾经有 5 个 Autoload，其中 3 个（`save_service` / `collections` / `localization`）是空转的，已删。
 > **加 Autoload 前先问：这个状态真的跨场景吗？** 单场景内部的事情用局部信号。
+>
+> `event_bus.gd` 同理缩过编：曾堆着六个**零监听**的信号（`game_started` / `flags_changed` /
+> `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
+> 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（4 个）
+### `scripts/core/` —— 与内容无关的机制（8 个）
 
 | 文件 | 职责 |
 | --- | --- |
@@ -155,6 +158,13 @@
 | `json_source.gd` | JSON 读取 + source map（报错能定位到文件与行号） |
 | `save_store.gd` | 存档文件读写 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
+| `scripted.gd` | **剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
+| `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
+| `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
+| `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
+
+> `scripted.gd` 的剧本从**调用方注入**（序章由 `main.gd` 注入 `bundle.prologue`），
+> 写状态走 `game.apply_state()`——引擎本身不认识「序章」这个词。
 
 ---
 
@@ -162,18 +172,18 @@
 
 **① 把「黑页」这个词换掉，这段代码还成立吗？**
 
-成立 → 通用，进  或 ；不成立 → 业务，留在 。
+成立 → 通用，进 `scripts/core/` 或 `scripts/services/`；不成立 → 业务，留在 `scripts/black_page/`。
 
 | 通用（换游戏也能用） | 业务（绑死黑页） |
 | --- | --- |
-|  条件求值 |  三次行动 / 落笔 / 侵蚀度 |
-|  JSON + 行号 |  颜色字号（这是黑页的视觉语言） |
-|  存档读写 |  场景表 |
-|  逐字显示 |  的热区表 |
-|  UV 热区层 |  /  的演出 |
-|  小游戏契约 | |
-|  强类型状态 | |
-|  事件总线 | |
+| `core/rules.gd` 条件求值 | `investigation.gd` 三次行动 / 落笔 / 侵蚀度 |
+| `core/json_source.gd` JSON + 行号 | `ui_style.gd` 颜色字号（这是黑页的视觉语言） |
+| `core/save_store.gd` 存档读写 | `scenes.gd` 场景表 |
+| `core/typewriter.gd` 逐字显示 | `hotspots.gd` 的热区表 |
+| `core/hotspot_layer.gd` UV 热区层 | `main.gd` / `scripted.gd` 的演出 |
+| `core/minigame.gd` 小游戏契约 | — |
+| `services/game_state.gd` 强类型状态 | — |
+| `services/event_bus.gd` 事件总线 | — |
 
 **② 同一个机制，出现第二次了吗？**
 
@@ -183,8 +193,8 @@
 
 | 组件 | 原来重复在哪 |
 | --- | --- |
-|  |  与  各写一套逐字显示，连「先补完再翻页」都重复 |
-|  | 序章与房间各写一套 UV 热区，**连换算都重复了一份** |
+| `core/typewriter.gd` | `main.gd` 与 `scripted.gd` 各写一套逐字显示，连「先补完再翻页」都重复 |
+| `core/hotspot_layer.gd` | 序章与房间各写一套 UV 热区，**连换算都重复了一份** |
 
 **③ 只有一个使用者，而且看得到未来也不会有第二个？**
 
@@ -194,13 +204,16 @@
 
 1. **参数比使用者还多**
 2. **为了照顾 A，B 得传一堆用不上的东西** → 正确做法是把 A 的装饰做成**可选回调**，
-   排除在公共路径之外（ 的  就是这么处理的：
+   排除在公共路径之外（`core/hotspot_layer.gd` 的 `decorate` 就是这么处理的：
    房间要悬停辉光与调试标签，序章不需要，所以它不在公共参数里）。
 3. **改一处要动三个文件**
 
 ### 提取出来放哪
 
+不绑内容的 → `scripts/core/`（例：`typewriter.gd` / `hotspot_layer.gd`）；
+绑内容的留在 `scripts/black_page/`（例：`ui_style.gd` / `scenes.gd` / `hotspots.gd`）。
 
+---
 
 ## 四、数据管线（全项目**只有一条**）
 
@@ -215,7 +228,7 @@ data/black_page/*.json
    bundle（内存字典）
       │
       ├──▶ investigation.gd    （读 bundle 判断与结算）
-      ├──▶ core/scripted.gd         （读 bundle.prologue 演序章）
+      ├──▶ core/scripted.gd    （剧本引擎；序章由 main 注入 bundle.prologue 后开演）
       └──▶ main.gd             （读 bundle 画界面）
       │
       ▼
@@ -238,8 +251,10 @@ data/black_page/*.json
 | --- | --- |
 | `flag(id)` / `owns(id)` / `person_flag(id, field)` | 查状态 |
 | `person_name(id)` | 显示名（按身份确认度决定用真名还是假名） |
+| `clue_description(id)` | 线索现在该显示的正文（先取条件满足的数据变体，没有就用基础描述） |
 | `matches(conditions)` | 条件求值（`requires` 那套） |
 | `available(action_id)` | 这条行动现在能不能做 |
+| `has_save()` | 有没有**能真的续**的存档（读得出来还要过得了校验，否则启动页不显示「继续游戏」） |
 | `snapshot()` / `flags_snapshot()` | 整份状态 / 只读旗标快照 |
 | `bundle` | 编译后的数据 |
 
@@ -249,7 +264,7 @@ data/black_page/*.json
 | --- | --- | --- |
 | `new_game()` / `load_game()` / `save_game()` | 开局 / 读档 / 存档 | — |
 | `begin_action(id)` / `cancel_action()` | 开始 / 取消行动 | 二者都会 `ticket += 1` |
-| `complete_action(token, result)` | 结算行动 | **必须带发起时的 token** |
+| `complete_action(token, result)` | 结算行动 | **必须带发起时的 token**；失败也要放行动锁（见七.3） |
 | `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
 | `end_day()` | 结束一天，兑现所有 pending | 事务式，失败则状态零变化 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
@@ -287,7 +302,7 @@ ui.<key>                       ← 侧栏入口是否点亮
 | --- | --- |
 | `flags.json` | 所有旗标的类型与默认值 |
 | `people.json` | 人物（假名 / 真名 / 身份 / 描述） |
-| `clues.json` | 线索（含 `people` 字段，图鉴的关联靠它推导） |
+| `clues.json` | 线索（含 `people` 字段，图鉴的关联靠它推导；`variants` 按条件换正文，界面不再特判） |
 | `actions.json` | 调查方向（`requires` / `clues` / `effects` / `text`） |
 | `cases.json` | 案件 |
 | `events.json` | 定时事件 |
@@ -324,14 +339,32 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 
 **任何新的异步流程都要带 token。**
 
+### 3. 行动锁：每一次「离开调查」都必须放锁
+
+`active_action` 非空 = 一次调查正挂在半空，此时 `begin_action` / `save_game` /
+`reload_data` 全部拒绝。锁本身没问题，危险的是**锁还在、调查却够不着了**——
+玩家会卡在「不能开始新调查、不能存档、不能重载数据」的死角里，只有重新开始能出去。
+
+两条规则：
+
+1. **引擎层**：`complete_action` 只在「可以重试」时留锁（小游戏没做完，
+   弹层还开着）；事务失败、方向失效这类路径一律先 `cancel_action()` 再返回错误。
+2. **表现层**：所有能让调查弹层 / 调查场景消失的出口——弹层上的「返回」、
+   ESC、菜单的「回到房间」、黑页的「合上黑页」——都走 `main.gd` 的
+   `_return_to_room()`，由它统一「有锁就放，然后回房间」。
+   **加新出口（新按钮、新快捷键、新面板）时不要绕过它。**
+
+「调查途中把玩家留在原地」的第三个变体是**读档**：存档不记录「你站在哪个场景」，
+所以读档成功一律 `_enter_room()` 落回房间，否则画面和弹层内容都停在旧世界。
+
 ### 游戏循环
 
 ```
-一天 = 3 次行动
+一天 = 行动预算次调查（预算 = flags.json 的 actions_left.max，本切片 3 次）
 选调查方向（不满足 requires 的方向**不显示**，不是灰掉）
   → 场景整张切换 → 正文逐句读 → **读完即提交，无取消**（「读 = 代价」）
   → 扣行动、拿线索、跑 effects
-行动归零 → 自动 end_day()
+行动归零 → 自动 end_day()；新的一天预算回到 max
 ```
 
 **落笔 = 延迟结算**：`write_name` 只往 `pending` 队列塞记录，当场世界不变；
@@ -444,7 +477,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 87 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 109 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -454,7 +487,7 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (95 checks)
+# 期望输出：BLACK_PAGE: PASS (109 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -462,8 +495,9 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 测试脚本只在 `failures == 0` 时报 PASS。**一旦有解析错误，后面的 check 全部不执行**，
 而 failures 仍是 0 → 假 PASS。
 
-实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——少了 27 项。
-**验收标准是 `PASS (95 checks)` 这个完整字符串，不是「看到 PASS」。**
+实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
+测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败），改测试时让它贴着当前数。
+**验收标准是 `PASS (109 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -472,7 +506,7 @@ python tools/audit.py            # 0 = 干净；1 = 有真问题
 python tools/audit.py --strict   # 连启发式提示也算失败
 ```
 
-它检查 11 项，分四组：
+它检查 12 项，分五组：
 
 | 组 | 检查 |
 | --- | --- |
@@ -512,7 +546,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | --- | --- |
 | `UI.box()` 返回 **StyleBox 不是节点** | 要面板得 `PanelContainer.new()` + `add_stylebox_override("panel", UI.box(...))` |
 | `game.flag()` 返回 `Variant` | 不能用 `:=` 推类型，要写成 `var x: bool = not bool(game.flag(...))` |
-| 每日行动次数是**硬编码 3** | `end_day()` 和 `data_loader` 校验各有一处，改要同时改 |
+| 每日行动数由数据声明 | `flags.json` 的 `actions_left`：`default` 必须 = `max`（`data_loader` 会拦）；`end_day` 与顶栏行动点都按 `max` 走。改次数还要给 `main.gd` 的 `DAY_TIMES` 加条目（条目数 ≥ max + 1） |
 | `_apply()` 与 `GameState.apply` 有重复 | 事务模式造成的（一个只改副本、一个改完即提交），可接受，但别让它们跑偏 |
 | 精灵图路径是**动态拼**的 | `"black_page_portrait_%s%s.png"`——静态扫描会误判为「没人用」 |
 
@@ -576,11 +610,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (95 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (109 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (95 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (109 checks)
 ```

@@ -8,7 +8,7 @@ var error := ""
 func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
-	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}, "entries": {}}}
+	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}}}
 	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
@@ -39,8 +39,11 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 		if not result.flags.has(id) or result.flags[id].get("type") != expected:
 			_fail("flags", "/" + id, "缺少或修改了结算核心 Flag 类型：" + id)
 			return {}
-	if result.flags.actions_left.default != 3 or result.flags.day.default != 1:
-		_fail("flags", "", "本切片采用第1天开始、每日3次行动")
+	# 每日行动数从数据读（end_day 按 max 恢复预算），但要求「新的一天是满的」：
+	# default 必须等于 max。本切片为 3；改次数就改 flags.json——
+	# 顶栏的时段表 DAY_TIMES 条目数要跟着 ≥ max + 1。
+	if result.flags.actions_left.get("max") == null or result.flags.actions_left.default != result.flags.actions_left.max or result.flags.day.default != 1:
+		_fail("flags", "", "actions_left 的 default 必须等于 max、day 从 1 开始（本切片每日 3 次行动）")
 		return {}
 	for id in result.clues:
 		result.catalog.items[id] = {"name": str(id), "max_stack": 1}
@@ -96,6 +99,17 @@ func _validate_row(group: String, id: String, row: Dictionary, bundle: Dictionar
 			for person in row.people:
 				if not bundle.people.has(person): return _fail(group, pointer + "/people", "未知人物")
 			if not bundle.flags.has("clue." + id + ".reliability"): return _fail(group, pointer, "缺少可信度声明")
+			# 线索变体：换一条来路的正文。requires 走和别处同一套条件校验，
+			# 写错的旗标名在这里就报出来。
+			var variants: Variant = row.get("variants", [])
+			if not variants is Array: return _fail(group, pointer + "/variants", "variants 必须为数组")
+			for index in variants.size():
+				var variant: Variant = variants[index]
+				if not variant is Dictionary or not variant.get("description") is String:
+					return _fail(group, pointer + "/variants/" + str(index), "变体缺少 description")
+				var variant_error: String = Rules.conditions_error(variant.get("requires", []), bundle.flags, bundle.catalog)
+				if not variant_error.is_empty():
+					return _fail(group, pointer + "/variants/" + str(index) + "/requires", variant_error)
 		"actions":
 			if row.get("kind") not in ["dialogue", "document", "minigame"] or not row.get("text") is String or not row.get("clues") is Array:
 				return _fail(group, pointer, "调查类型、正文或奖励格式错误")

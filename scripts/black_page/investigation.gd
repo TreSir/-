@@ -4,6 +4,8 @@ signal changed
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 const Store = preload("res://scripts/core/save_store.gd")
+## 存档槽名只在这里出现一次：写、读、「有没有存档」都走它。
+const SLOT := "black_page_slot_1"
 var bundle: Dictionary = {}
 var journal: Array = []
 var pending: Array = []
@@ -70,6 +72,18 @@ func person_flag(id: String, field: String) -> Variant: return flag("person." + 
 func person_name(id: String) -> String:
 	return bundle.people[id].real_name if person_flag(id, "identity") == 100 else bundle.people[id].name
 
+## 一条线索现在该显示的正文：取第一个条件满足的变体，否则用基础描述。
+##
+## 为什么需要它：同一条线索在不同来路下正文不一样——「许妍留下的证词」是赴约
+## 听来的完整版，还是从旧手机打捞的半条语音，读起来完全不同。以前这个判断硬编码
+## 在界面里（对 testimony 的特判），换一条线索就要再改一次界面；现在由线索自己在
+## 数据里声明变体，界面只问「这条线索现在该显示什么」。
+func clue_description(id: String) -> String:
+	var clue: Dictionary = bundle.clues[id]
+	for variant in clue.get("variants", []):
+		if matches(variant.get("requires", [])): return variant.description
+	return clue.description
+
 func available(id: String) -> bool:
 	if not bundle.actions.has(id) or flag("ending") != "": return false
 	return not flag("action." + id + ".done") and matches(bundle.actions[id].get("requires", []))
@@ -86,12 +100,19 @@ func cancel_action() -> void:
 	active_action = ""
 	ticket += 1
 
+## 提交一次调查。**除了「可以重试」的中断，任何失败路径都不许把行动锁留在身上**——
+## 锁不释放，玩家就卡在「不能开始新调查、不能存档、不能重载数据」的死角里，
+## 只有重新开始能出去。所以每个 return 之前都问一句：锁放了吗？
 func complete_action(token: int, result: Dictionary = {}) -> String:
 	if token != ticket or active_action.is_empty(): return "调查回调已过期。"
 	var id := active_action
 	var action: Dictionary = bundle.actions[id]
+	# 小游戏没做完可以重试：弹层还开着，锁留着不碍事。
 	if action.kind == "minigame" and result.get("success") != true: return "尚未完成还原；可以重试或返回。"
-	if not available(id): return "调查方向发生变化，请返回。"
+	if not available(id):
+		# 状态零变化，只是这条方向不能走了——锁放掉，让玩家能继续。
+		cancel_action()
+		return "调查方向发生变化，请返回。"
 	var candidate := GameState.snapshot()
 	var gained: Array = []
 	for clue in action.clues:
@@ -103,16 +124,22 @@ func complete_action(token: int, result: Dictionary = {}) -> String:
 	candidate.flags["action." + id + ".done"] = true
 	candidate.flags.actions_left -= 1
 	var error: String = GameState.validate_snapshot(candidate)
-	if not error.is_empty(): return error
+	if not error.is_empty():
+		# 事务回滚（什么都没写），但锁要放——不然一条坏数据能把整局锁死。
+		cancel_action()
+		return error
 	GameState.restore(candidate)
 	cancel_action()
 	_log(action.text + ("\n获得线索：" + "、".join(gained) if not gained.is_empty() else ""))
-	EventBus.custom_event.emit("investigation_completed", {"id": id, "clues": action.clues.duplicate()})
+	var day_error := ""
 	if flag("actions_left") == 0:
-		error = end_day()
-		if not error.is_empty(): _log(error)
+		# 行动点用尽自动进次日。次日结算失败必须往上报：
+		# 只写日志的话，玩家会停在「0 次行动、日子也不前进」的死角里，
+		# 而且看不出发生了什么。
+		day_error = end_day()
+		if not day_error.is_empty(): _log(day_error)
 	changed.emit()
-	return ""
+	return day_error
 
 func can_write(id: String) -> bool:
 	if not bundle.people.has(id) or not active_action.is_empty() or flag("ending") != "": return false
@@ -125,7 +152,6 @@ func write_name(id: String) -> String:
 	if not can_write(id): return "当前不能书写这个名字。"
 	pending.append({"person": id, "name": person_name(id), "valid": person_flag(id, "identity") == 100, "day": int(flag("day"))})
 	_log("你写下了「%s」。墨水慢慢干了。\n窗外的车流声没有变化。" % person_name(id))
-	EventBus.custom_event.emit("notebook_written", {"person": id})
 	changed.emit()
 	return ""
 
@@ -144,7 +170,7 @@ func end_day() -> String:
 			candidate.flags.wrong_writes += 1
 			messages.append("黑页上的「%s」被一道细痕划掉。\n没有相关死亡消息。那道痕迹却留在纸上。" % entry.name)
 	candidate.flags.day += 1
-	candidate.flags.actions_left = 3
+	candidate.flags.actions_left = int(bundle.flags.actions_left.max)
 	for id in bundle.events:
 		var event: Dictionary = bundle.events[id]
 		if not candidate.flags["event." + id + ".done"] and Rules.matches(event.get("requires", []), candidate.flags, candidate.inventory):
@@ -156,7 +182,6 @@ func end_day() -> String:
 	GameState.restore(candidate)
 	pending.clear()
 	_log("第 %d 天\n%s" % [int(flag("day")), "\n\n".join(messages) if not messages.is_empty() else "雨还在下。手机暂时没有新的消息。"])
-	EventBus.custom_event.emit("day_settled", {"day": flag("day")})
 	changed.emit()
 	return ""
 
@@ -227,11 +252,21 @@ func restore(data: Dictionary) -> String:
 
 func save_game() -> String:
 	if not active_action.is_empty(): return "调查结束后才能存档。"
-	return Store.new().write("black_page_slot_1", snapshot())
+	return Store.new().write(SLOT, snapshot())
 
 func load_game() -> String:
-	var loaded: Dictionary = Store.new().read("black_page_slot_1")
+	var loaded: Dictionary = Store.new().read(SLOT)
 	return str(loaded.error) if loaded.has("error") else restore(loaded.data)
+
+## 有没有**真的能续**的存档。开始页据此决定要不要显示「继续游戏」——
+## 只查文件读不读得出来是不够的：内容过不了校验（版本不符 / 结构损坏 /
+## 引用了已经不存在的结局）时，「继续游戏」点下去只会把错误打在
+## 开始页看不见的字幕带上，玩家会以为游戏坏了。
+## slot 参数只为测试留口子，游戏里一律走默认槽位。
+func has_save(slot: String = SLOT) -> bool:
+	var loaded: Dictionary = Store.new().read(slot)
+	if loaded.has("error"): return false
+	return validate_save(loaded.data, bundle.flags, bundle.catalog).is_empty()
 
 func reload_data() -> String:
 	if not active_action.is_empty(): return "请先结束当前调查再重载。"
@@ -244,6 +279,5 @@ func reload_data() -> String:
 	bundle = candidate
 	GameState.configure(bundle)
 	GameState.restore(state)
-	EventBus.story_reloaded.emit()
 	changed.emit()
 	return ""

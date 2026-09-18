@@ -8,7 +8,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 80
+const UI_CHECK_FLOOR := 105
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -47,6 +47,14 @@ func act(id: String) -> void:
 	check(game.begin_action(id).is_empty(), "begin " + id)
 	check(game.complete_action(game.ticket, {"success": true}).is_empty(), "complete " + id)
 
+## 造一个 ESC 按键事件，直接喂给 _unhandled_key_input。
+## 键盘事件不走 GUI 命中测试，不需要 push_input——直接调就是玩家的真实路径。
+func _esc() -> InputEventKey:
+	var event := InputEventKey.new()
+	event.keycode = KEY_ESCAPE
+	event.pressed = true
+	return event
+
 func identity_route() -> void:
 	act("camera")
 	act("badge")
@@ -79,10 +87,21 @@ func _run() -> void:
 	check(store.write("black_page_smoke_roundtrip", written).is_empty(), "save overwrite")
 	game.new_game()
 	check(game.restore(store.read("black_page_smoke_roundtrip").get("data", {})).is_empty(), "JSON save restores pending write")
+	# 「有没有可续的存档」= **能不能真的续**，不是「文件读不读得出来」：
+	# 内容过不了校验的存档，开始页不该摆出「继续游戏」。
+	check(game.has_save("black_page_smoke_roundtrip"), "has_save accepts a restorable save")
+	store.write("black_page_smoke_roundtrip", {"schema": 999, "content": "black_page_mvp",
+		"state": {"flags": {}, "inventory": {}}, "pending": [], "journal": []})
+	check(not game.has_save("black_page_smoke_roundtrip"), "has_save rejects a save that fails validation")
 	check(game.end_day().is_empty() and game.person_flag("zhou", "status") == "dead", "next-day death")
 	check(game.flag("writes") == 1 and game.flag("linmo_suspicion") > 0 and game.flag("testimony_lost"), "death cascades")
 	check(game.available("fallback") and not game.available("testimony"), "soft failure opens fallback")
 	act("fallback")
+	# 线索变体：打捞来的语音和赴约听来的证词正文不同——由线索自己在数据里声明变体，
+	# 界面不问来路。这条守的是「界面里没有 testimony 特判」。
+	check(game.clue_description("testimony") == game.bundle.clues.testimony.variants[0].description
+			and game.clue_description("testimony") != game.bundle.clues.testimony.description,
+			"fallback route swaps the clue body via the declared variant")
 	check(game.person_flag("zhou", "truth") == 40, "fallback does not reveal full truth")
 	var dead_checkpoint: Dictionary = game.snapshot()
 	check(game.finish_case("seal").is_empty() and game.flag("ending") == "wrong", "wrong justice ending")
@@ -90,6 +109,8 @@ func _run() -> void:
 	check(game.finish_case("keep").is_empty() and game.flag("ending") == "judge", "judge ending")
 	game.restore(identity_checkpoint)
 	act("testimony")
+	check(game.clue_description("testimony") == game.bundle.clues.testimony.description,
+			"uninterrupted route keeps the base clue body")
 	var full_checkpoint: Dictionary = game.snapshot()
 	check(game.finish_case("seal").is_empty() and game.flag("ending") == "closed", "abstain and next-day ending")
 	game.restore(full_checkpoint)
@@ -265,6 +286,10 @@ func _ui() -> void:
 	await get_tree().create_timer(1.6).timeout
 	check(not is_instance_valid(ui.scripted) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
+	# 顶栏行动点跟着数据声明走（flags.json 的 actions_left.max），不是写死的 3——
+	# 改每日行动数只动数据，这里会跟着增减。
+	check(ui._pips.get_child_count() == int(ui.game.bundle.flags.actions_left.max),
+			"action pips follow the declared daily max")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
@@ -360,4 +385,32 @@ func _ui() -> void:
 		await get_tree().create_timer(0.12).timeout
 		guard += 1
 	check(ui.scene_id == "room" and ui.game.flag("actions_left") == 1, "reading the report settles the action and returns to the room")
+
+	# ── 行动锁不许在任何「退出路径」上漏掉 ─────────────────────────────────
+	# 锁（game.active_action）不释放，玩家就卡在「不能开始新调查、不能存档、
+	# 不能重载数据」的死角里，只有重新开始能出去。三条退出路径各验一次。
+	ui.game.new_game()
+	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the ESC check")
+	ui._open_minigame("camera")
+	await get_tree().process_frame
+	check(ui.modal.visible and not ui.game.active_action.is_empty(), "the minigame modal holds the action lock")
+	ui._unhandled_key_input(_esc())
+	await get_tree().process_frame
+	check(ui.game.active_action.is_empty() and not ui.modal.visible and ui.scene_id == "room",
+		"ESC on an investigation modal releases the lock and returns to the room")
+	check(ui.game.flag("actions_left") == 3, "abandoning an investigation spends no action")
+	# 菜单的「回到房间」
+	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the menu check")
+	ui._return_to_room()
+	await get_tree().process_frame
+	check(ui.game.active_action.is_empty() and ui.scene_id == "room", "return-to-room releases the action lock")
+	# 调查途中拐去看黑页：合上黑页同样要落回房间、放掉锁
+	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the notebook check")
+	ui._open_notebook()
+	await get_tree().create_timer(0.3).timeout
+	check(ui.scene_id == "notebook" and not ui.game.active_action.is_empty(), "the notebook opens over an in-flight investigation")
+	ui.modal_rows.get_child(ui.modal_rows.get_child_count() - 1).pressed.emit()
+	await get_tree().create_timer(0.9).timeout
+	check(ui.game.active_action.is_empty() and ui.scene_id == "room" and not ui.modal.visible,
+		"closing the notebook mid-investigation returns to the room and releases the lock")
 	ui.free()

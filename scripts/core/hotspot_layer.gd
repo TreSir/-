@@ -3,7 +3,7 @@ extends Control
 ##
 ## 为什么有这个文件：序章（rect 来自 prologue.json）和房间（来自 hotspots.gd 表）
 ## 曾经各写一套建层 + 定位，**连 UV→屏幕的换算都各写了一份**。
-## 现在合成一套——换算统一走 `hotspots.gd::rect_for`，它考虑了封面式拉伸的留边。
+## 现在合成一套——换算就放在本文件 `rect_for()`，它考虑了封面式拉伸的留边。
 ##
 ## 用法：
 ##
@@ -20,8 +20,6 @@ extends Control
 ##
 ## `decorate` 可选：拿到 (box, item) 让你加自己的装饰。
 ## 房间那套要悬停辉光与调试标签，序章不需要——所以它必须可选，不能塞进公共路径。
-
-const Hotspots = preload("res://scripts/black_page/hotspots.gd")
 
 var _items: Array = []
 var _tex_size := Vector2.ZERO
@@ -57,7 +55,7 @@ func relayout() -> void:
 		var box := child as Control
 		var uv: Variant = box.get_meta("uv", null)
 		if uv == null: continue
-		var rect := Hotspots.rect_for(uv_dict(uv), view, _tex_size)
+		var rect := rect_for(uv_dict(uv), view, _tex_size)
 		box.position = rect.position
 		box.size = rect.size
 
@@ -100,3 +98,16 @@ static func uv_dict(uv: Variant) -> Dictionary:
 					"w": float(d[keys[2]]), "h": float(d[keys[3]]),
 				}
 	return {}
+
+## 把一个热区的 UV 换算成屏幕矩形。
+## TextureRect(EXPAND_IGNORE_SIZE + STRETCH_KEEP_ASPECT_COVERED) 的铺图算法就是
+## 取较大的缩放比铺满、再居中，这里照抄，保证和画面严格对齐：
+##   scale = max(view / tex)，origin = (view - tex * scale) / 2
+static func rect_for(uv: Dictionary, view: Vector2, tex_size: Vector2) -> Rect2:
+	if tex_size.x <= 0.0 or tex_size.y <= 0.0 or view.x <= 0.0 or view.y <= 0.0:
+		return Rect2()
+	var scale: float = maxf(view.x / tex_size.x, view.y / tex_size.y)
+	var origin: Vector2 = (view - tex_size * scale) * 0.5
+	return Rect2(
+		origin + Vector2(float(uv["u"]), float(uv["v"])) * tex_size * scale,
+		Vector2(float(uv["w"]), float(uv["h"])) * tex_size * scale)

@@ -41,7 +41,7 @@ var source: Array = []
 ## main.gd 注入的调查模块。**剧本段落写状态必须经它**——不越过游戏模块直接改底层状态。
 var game: Node
 ## main.gd 注入的音乐播放器。剧本段落的音乐是「若有若无，然后消失」（策划案 §九），
-## 所以页面可以自己声明对音乐的要求，见 。
+## 所以页面可以自己声明对音乐的要求，见 `prologue.json` 各页的 `music` 字段。
 var music: Node
 ## main.gd 注入的音效播放器。音效是**事件型**的（分页触发一次，不循环）。
 var sfx: Node
@@ -72,8 +72,6 @@ func reload_pages() -> void:
 		return
 	pages = _load_pages()
 	_render_page()
-
-## 内置兜底文本（prologue.json 正常时不会用到）。
 
 var step := 0
 var title: Label

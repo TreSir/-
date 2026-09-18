@@ -38,8 +38,9 @@ const Hotspots = preload("res://scripts/black_page/hotspots.gd")
 const PERSON_STATUS := {"normal": "正常", "missing": "下落不明", "fugitive": "逃亡", "injured": "受伤", "dead": "死亡", "arrested": "被捕", "hidden": "隐藏", "left": "离开城市"}
 const CASE_STATUS := {"undiscovered": "未发现", "investigating": "调查中", "blocked": "暂无调查方向", "clear": "真相基本明确", "frozen": "冻结"}
 const RELIABILITY := {"reliable": "可靠", "dubious": "存疑", "contradictory": "矛盾", "forged": "伪造"}
+## 剩余行动 → 时刻。索引是 actions_left（0..max），
+## 条目数要 ≥ flags.json 的 actions_left.max + 1。
 const DAY_TIMES := ["23:40", "18:40", "14:20", "09:10"]
-const MAX_FREE_ACTIONS := 3
 
 ## 文字速度档位。**倍率**，不是绝对字/秒——见 _type_scale_index 的注释。
 ## 最后一档不是「很快」而是「不逐字」：乘上去之后一句话基本一帧内就完。
@@ -108,6 +109,10 @@ var _history: Array = []
 const HISTORY_CAP := 120
 var _in_room := true
 var _open_panel := ""
+## 当前弹层是不是「调查进行中的」（小游戏 / 结果确认）。这类弹层后面挂着行动锁，
+## 所以 ESC 不能只把它关掉——要按弹层上的「返回」处理：放弃调查、回房间、不消耗行动。
+## 只关弹层不释放锁的话，玩家会卡在「不能调查、不能存档」的状态里。
+var _investigation_modal := false
 
 
 func _ready() -> void:
@@ -274,10 +279,6 @@ func _build_topbar() -> void:
 	_pips = HBoxContainer.new()
 	_pips.add_theme_constant_override("separation", 5)
 	_pips.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	for _index in MAX_FREE_ACTIONS:
-		var pip := ColorRect.new()
-		pip.custom_minimum_size = Vector2(20, 4)
-		_pips.add_child(pip)
 	row.add_child(_pips)
 
 func _vsep() -> ColorRect:
@@ -413,7 +414,7 @@ func _render_menu_rows() -> void:
 		var error: String = game.save_game()
 		_message(error, "已保存当前进度。"))
 	_menu_panel.add_child(UI.rule(0.6))
-	_add_menu_row(_menu_panel, "读取存档", "", func(): _confirm("读取存档", "当前未保存进度将被替换。", func(): _message(game.load_game(), "已读取存档。")))
+	_add_menu_row(_menu_panel, "读取存档", "", func(): _confirm("读取存档", "当前未保存进度将被替换。", _load_from_menu))
 	_menu_panel.add_child(UI.rule(0.6))
 	_add_menu_row(_menu_panel, "重新开始", "", func(): _confirm("重新开始", "当前未保存进度将被替换。已有手动存档会保留。", _restart_game))
 	_menu_panel.add_child(UI.rule(0.6))
@@ -433,7 +434,7 @@ func _render_menu_rows() -> void:
 		_add_menu_row(_menu_panel, "重载数据", "F6", func(): _message(game.reload_data(), "已重载调查数据。"))
 	_menu_panel.add_child(UI.rule(0.6))
 	_add_menu_row(_menu_panel, "回顾", "看过的文字", _open_history)
-	_add_menu_row(_menu_panel, "回到房间", "", _enter_room)
+	_add_menu_row(_menu_panel, "回到房间", "", _return_to_room)
 
 ## 开关类条目：点完不关菜单，直接原地重画，方便连着调。
 func _add_toggle_row(text: String, callback: Callable) -> void:
@@ -858,7 +859,7 @@ func _show_launch() -> void:
 		add_child(sfx)
 	launch = Launch.new()
 	launch.name = "Launch"
-	launch.can_continue = not Store.new().read("black_page_slot_1").has("error")
+	launch.can_continue = game.has_save()
 	# 从游戏内退回来重开时，开关状态要跟着走，否则底栏会显示成反的。
 	launch.rain_muted = rain_muted
 	launch.music_muted = music_muted
@@ -944,7 +945,10 @@ func _reveal_hud(visible_now: bool) -> void:
 
 func refresh() -> void:
 	if game.bundle.is_empty(): return
-	header.text = "第 %d 天   %s" % [int(game.flag("day")), DAY_TIMES[int(game.flag("actions_left"))]]
+	# 时刻表按 actions_left 取值。数据把每日行动数改得比表长时要夹一下——
+	# 显示成最后一个时刻，总好过整条流程崩在这里。
+	var left: int = clampi(int(game.flag("actions_left")), 0, DAY_TIMES.size() - 1)
+	header.text = "第 %d 天   %s" % [int(game.flag("day")), DAY_TIMES[left]]
 	_refresh_pips()
 	_crumb.text = Scenes.name_of(scene_id)
 	_sync_nav()
@@ -956,7 +960,18 @@ func refresh() -> void:
 	# 系统刷新直接落全文，不走打字机（这不是剧情推进，不需要逐字）。
 	_typer.set_line_now(line)
 
+## 行动点数量跟着数据的声明走（flags.json 的 actions_left.max），不写死：
+## 改每日行动数只动数据；F6 热重载把 max 改大改小，这里也会跟着增减。
 func _refresh_pips() -> void:
+	var total := int(game.bundle.flags.actions_left.get("max", 0))
+	while _pips.get_child_count() > total:
+		var extra := _pips.get_child(_pips.get_child_count() - 1)
+		_pips.remove_child(extra)
+		extra.queue_free()
+	while _pips.get_child_count() < total:
+		var pip := ColorRect.new()
+		pip.custom_minimum_size = Vector2(20, 4)
+		_pips.add_child(pip)
 	var left := int(game.flag("actions_left"))
 	for index in _pips.get_child_count():
 		var pip := _pips.get_child(index) as ColorRect
@@ -1003,18 +1018,19 @@ func _investigate(action_id: String) -> void:
 	_say(_beats(str(action.text)), _commit.bind(action_id), float(action.get("speed", 0.0)))
 
 ## 读到正文就必须提交——不能免费读完再取消，所以没有「先不记录」。
+## 提交失败也要回房间（文案里本来就写着「请返回」）：把人留在调查场景里，
+## 那里没有热点、队列也空了，玩家会卡在那儿出不去。
 func _commit(_action_id: String) -> void:
-	var error: String = game.complete_action(game.ticket, {})
-	if not error.is_empty():
-		_message(error)
-		return
-	_enter_room()
+	_enter_room(game.complete_action(game.ticket, {}))
 
 func _open_minigame(action_id: String) -> void:
 	var action: Dictionary = game.bundle.actions[action_id]
 	var token: int = game.ticket
-	_clear_modal()
+	# 用 _close_modal 而不是 _clear_modal 关掉上一个弹层（多半是「案件」面板）：
+	# 侧栏高亮也要一起退掉，否则小游戏期间「案件」会一直亮着。
+	_close_modal()
 	modal.show()
+	_investigation_modal = true
 	modal_rows.add_child(_modal_head("调查 ／ 监控", str(action.name)))
 	var activity = load(action.scene).instantiate()
 	if activity is Control:
@@ -1024,16 +1040,15 @@ func _open_minigame(action_id: String) -> void:
 		if token == game.ticket: _show_report.call_deferred(action_id, token, result))
 	activity.begin(action.config, game.flags_snapshot())
 	var back := UI.ghost_button("返回（不消耗行动）")
-	back.pressed.connect(func():
-		game.cancel_action()
-		_close_modal()
-		_enter_room())
+	back.pressed.connect(_return_to_room)
 	modal_rows.add_child(back)
 	_fit_modal(false)
 
 func _show_report(action_id: String, token: int, result: Dictionary) -> void:
 	if token != game.ticket: return
-	_clear_modal()
+	_close_modal()
+	modal.show()
+	_investigation_modal = true
 	var action: Dictionary = game.bundle.actions[action_id]
 	modal_rows.add_child(_modal_head("调查结果", str(action.name)))
 	var body := VBoxContainer.new()
@@ -1049,12 +1064,36 @@ func _show_report(action_id: String, token: int, result: Dictionary) -> void:
 	modal_rows.get_child(2).pressed.connect(func():
 		var error: String = game.complete_action(token, result)
 		if not error.is_empty():
+			# 锁还在 ⇒ 还能重试（小游戏没做完），错误就地显示；
+			# 锁没了（回调过期 / 事务中止 / 次日结算失败）⇒ 没有可重试的东西了，
+			# 回房间；错误跟着字幕带显示，别把人留在一张点不动的结果页上。
+			if game.active_action.is_empty():
+				_enter_room(error)
+				return
 			warn.text = error
 			warn.add_theme_color_override("font_color", UI.AMBER)
 			return
 		_close_modal()
 		_enter_room())
 	_fit_modal()
+
+## 回房间。**进行中的调查要一并放弃**——行动锁不释放，玩家就会卡在
+## 「不能开始新调查、不能存档、不能重载数据」的状态里，只有重新开始能出去。
+## 弹层上的「返回」、菜单的「回到房间」、ESC 都走这里，语义只有一份。
+func _return_to_room() -> void:
+	if not game.active_action.is_empty():
+		game.cancel_action()
+	_enter_room()
+
+## 游戏内读档。**读档成功就落回房间**——存档不记录「你站在哪个场景」，
+## 留在原场景（甚至调查到一半的场景）玩家会不知道自己在哪，
+## 弹层里显示的也还是上一个世界的内容。
+func _load_from_menu() -> void:
+	var error: String = game.load_game()
+	if not error.is_empty():
+		_message(error)
+		return
+	_enter_room("", "已读取存档。")
 
 # ── 左侧栏的四个系统面板 ─────────────────────────────────────────────────
 func _begin_panel(key: String, chip_text: String, title_text: String) -> void:
@@ -1284,7 +1323,7 @@ func _open_notebook() -> void:
 		var keep := UI.ghost_button("保留黑页")
 		keep.pressed.connect(func(): _confirm("保留黑页", "进入次日，接收最后的消息，然后结束首章。", func(): _message(game.finish_case("keep"))))
 		modal_rows.add_child(keep)
-	_end_panel("合上黑页", _enter_room)
+	_end_panel("合上黑页", _return_to_room)
 
 func _label_micro(text: String) -> Label:
 	return UI.label(text, UI.SIZE_MICRO, UI.ACCENT)
@@ -1328,9 +1367,7 @@ func _clue_rows() -> Array:
 		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		head.add_child(chip)
 		column.add_child(head)
-		var description: String = clue.description
-		if id == "testimony" and game.flag("action.fallback.done"): description = clue.fallback_description
-		column.add_child(UI.flow(description, UI.SIZE_SMALL + 1, Color("c6d5dd")))
+		column.add_child(UI.flow(game.clue_description(str(id)), UI.SIZE_SMALL + 1, Color("c6d5dd")))
 		column.add_child(UI.rule())
 		out.append(column)
 	return out
@@ -1344,6 +1381,8 @@ func _modal_head(chip_text: String, title_text: String) -> VBoxContainer:
 	return head
 
 func _clear_modal() -> void:
+	# 内容一换，它就不再是「调查弹层」了；ESC 怎么处理跟着这个身份走。
+	_investigation_modal = false
 	if modal_rows != null: _clear(modal_rows)
 
 func _confirm(title_text: String, body: String, action: Callable) -> void:
@@ -1370,9 +1409,9 @@ func _close_modal() -> void:
 
 func _ask_write(id: String) -> void:
 	_confirm("写下「%s」" % game.person_name(id), "一旦写下，无法撤销。\n后果不会立刻出现。", func():
-		var error: String = game.write_name(id)
-		_enter_room()
-		_message(error))
+		# 错误要交给 _enter_room 的 note_error 收口：先 _enter_room 再 _message 的话，
+		# 提示会被转场后的台词盖掉。
+		_enter_room(game.write_name(id)))
 	modal_rows.get_child(2).text = "落笔"
 	modal_rows.get_child(3).text = "合上笔记"
 
@@ -1416,7 +1455,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if modal.visible:
-			_close_modal()
+			# 调查弹层（小游戏 / 结果确认）按 ESC 等于弹层上的「返回」：
+			# 放弃调查、回房间。只关弹层的话行动锁就漏了，玩家会卡死。
+			if _investigation_modal:
+				_return_to_room()
+			else:
+				_close_modal()
 			get_viewport().set_input_as_handled()
 		return
 	if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:

@@ -27,7 +27,7 @@ static func value_error(value: Variant, definition: Dictionary) -> String:
 static func effects_error(effects: Variant, definitions: Dictionary, catalog: Dictionary) -> String:
 	if not effects is Dictionary: return "effects 必须为对象"
 	for field in effects:
-		if field not in ["set", "add", "inventory", "unlock"]: return "未知效果字段：" + str(field)
+		if field not in ["set", "add", "inventory"]: return "未知效果字段：" + str(field)
 	for field in ["set", "add", "inventory"]:
 		if not effects.get(field, {}) is Dictionary: return field + " 必须为对象"
 	for id in effects.get("set", {}):
@@ -42,9 +42,6 @@ static func effects_error(effects: Variant, definitions: Dictionary, catalog: Di
 	for id in effects.get("inventory", {}):
 		if not catalog.get("items", {}).has(id): return "未知道具：" + str(id)
 		if not integer(effects.inventory[id]): return "道具增减必须为整数：" + str(id)
-	if not effects.get("unlock", []) is Array: return "unlock 必须为数组"
-	for id in effects.get("unlock", []):
-		if not catalog.get("entries", {}).has(id): return "未知图鉴：" + str(id)
 	return ""
 
 static func conditions_error(conditions: Variant, definitions: Dictionary, catalog: Dictionary) -> String:
