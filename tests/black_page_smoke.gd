@@ -17,7 +17,7 @@ var failures := 0
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。贴着总数减一：最后一条 check 就是门槛自己，
 ## 它跑到的时候还没把自己数进去。
-const UI_CHECK_FLOOR := 248
+const UI_CHECK_FLOOR := 250
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -509,6 +509,14 @@ func _run() -> void:
 		if not str(pg.get("sfx", "")).is_empty(): with_sfx += 1
 	check(with_music >= 2 and with_sfx >= 6,
 		"compiled scripted carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
+	# 回归：旧写法 bg 的兜底链要真的走得到。background 的默认值以前是 "door"，
+	# 兜底条件永不为真——只写 bg 的页会静默拿到 door 背景（别名根本没翻译）。
+	var legacy_pages: Array = loader._compile_prologue(
+		{"pages": [{"id": "legacy", "bg": "note"}, {"id": "bare"}]})
+	check(legacy_pages.size() == 2
+			and str(legacy_pages[0].background).ends_with("black_page_prologue_notebook_v1.png")
+			and str(legacy_pages[1].background).ends_with("black_page_prologue_door_v1.png"),
+		"the legacy bg fallback chain still translates aliases (bg → note, neither → door)")
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")
@@ -647,6 +655,18 @@ func _ui() -> void:
 	ui.scripted.step = 0
 	ui.scripted._render_page()
 	check(ui.scripted._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
+	# 黑页视觉卡的字号来自数据（第 7 页 rules_page 18、第 8 页 existing_name 25），
+	# 要真的落到字体上——漏拷进 meta 的话每页会一齐退回 20，静默丢数据。
+	ui.scripted.step = 7
+	ui.scripted._render_page()
+	var small_font: int = (ui.scripted._visual_layer.get_child(0) as Label).get_theme_font_size("font_size")
+	ui.scripted.step = 8
+	ui.scripted._render_page()
+	var large_font: int = (ui.scripted._visual_layer.get_child(0) as Label).get_theme_font_size("font_size")
+	check(small_font > 0 and large_font > small_font,
+		"notebook visuals keep their data-authored font sizes (%d < %d)" % [small_font, large_font])
+	ui.scripted.step = 0
+	ui.scripted._render_page()
 	# 演出组件要真的建出来：index=1 是出租屋那一页，挂了 5 个热点
 	ui.scripted.step = 1
 	ui.scripted._render_page()

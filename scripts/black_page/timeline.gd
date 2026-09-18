@@ -30,7 +30,7 @@ func _select(index: int) -> void:
 	if index != order[selected.size()]:
 		selected.clear()
 		for button in buttons: button.disabled = false
-		status.text = "时间顺序不一致。可以重新排列，不额外消耗行动。"
+		status.text = "时间顺序不一致。可以重新排列。"
 		return
 	selected.append(index)
 	buttons[index].disabled = true

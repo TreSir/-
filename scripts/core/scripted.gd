@@ -435,10 +435,11 @@ func _play_page_sfx(spec: Variant) -> void:
 		for path in spec:
 			sfx.play(str(path))
 
-## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载；旧写法 door / note 兜底。
+## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载。
+##
+## 进来的 value 只会是 res:// 路径或 "black"——剧本私有别名（door / note）
+## 在 loader 规范化时已经翻译掉了（见 data_loader 的 BACKDROP_ALIASES）。
 func _apply_backdrop(value: String) -> void:
-	## 进来的 value 只会是 res:// 路径或 "black"——
-	## 剧本私有别名（door / note）在 loader 规范化时已经翻译掉了。
 	var path := value
 	# "black" 必须**画成黑的**。只把贴图置空的话这一层是透明的，
 	# 底下的主界面（房间插画 + HUD）会透上来——策划案 §二 要的是黑屏。
@@ -451,7 +452,6 @@ func _apply_backdrop(value: String) -> void:
 		_backdrop.texture = null
 		return
 	_backdrop.texture = load(path)
-	_blackout.visible = false
 
 ## UV 比例 → 当前控件的像素矩形。热区和笔记本正文框都用它定位。
 func _uv_to_rect(uv: Array, view: Vector2) -> Rect2:
@@ -480,6 +480,8 @@ func _build_notebook_visual(spec: Dictionary) -> void:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.set_meta("uv", spec.get("rect", [0.22, 0.25, 0.27, 0.43]))
+	# 字号也要带进 meta：_layout_visual 按屏幕缩放重设 font_size 时读的就是它。
+	label.set_meta("size", float(spec.get("size", 20)))
 	var material := ShaderMaterial.new()
 	material.shader = INK_SHADER
 	material.set_shader_parameter("progress", 0.0)

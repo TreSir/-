@@ -202,6 +202,8 @@ static func layout_dialogue(box: Control, height: float = DIALOG_H) -> void:
 		return
 	box.offset_bottom = 0
 	box.offset_top = -height
+
+## 给内容右边留一段空白：内容 + 一个按 tail 比例伸缩的占位，排成一行。
 ## 这样正文只占 (1 / (1 + tail)) 的宽度，避免整屏宽的长行。
 static func narrow(node: Control, tail: float = 0.62) -> HBoxContainer:
 	var row := HBoxContainer.new()

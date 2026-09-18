@@ -23,10 +23,10 @@ const MUSIC_GAME := "res://assets/audio/bgm_empty_city.ogg"
 
 ## 备选雨声，供替换 RAIN_DEFAULT。
 const RAIN_ALTERNATIVES := {
-	"steady": "res://assets/audio/rain_steady.ogg",      # 平稳细雨（当前默认）
+	"steady": "res://assets/audio/rain_steady.ogg",      # 平稳细雨
 	"light": "res://assets/audio/rain_light.ogg",        # 更轻、更细
 	"heavy": "res://assets/audio/rain_heavy.ogg",        # 密集大雨
-	"thunder": "res://assets/audio/rain_thunder.ogg",    # 雨 + 远处闷雷
+	"thunder": "res://assets/audio/rain_thunder.ogg",    # 雨 + 远处闷雷（当前默认）
 }
 
 ## 备选背景音乐，供替换 MUSIC_MENU / MUSIC_GAME。

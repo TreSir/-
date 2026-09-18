@@ -200,8 +200,9 @@ const PROLOGUE_FIELDS := {
 	"title": "",
 	"body": "",
 	"action": "",
-	# 新写法是 background；bg 是旧写法（door / note），留着只为不告警。
-	"background": "door",
+	# 新写法是 background；bg 是旧写法（door / note）。默认**留空**——
+	# 这样下面的兜底链才走得到：background → bg → "door"（见 _compile_prologue）。
+	"background": "",
 	"bg": "",
 	"visual": {},
 	"choices": [],

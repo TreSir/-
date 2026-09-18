@@ -15,7 +15,7 @@ const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 ##
 ## 之前用的是 `rain_steady`（原始素材是「School day / Rain」——**雨天的学校**），
 ## 录音里除了雨还有环境声和低频轰鸣，放在「深夜出租屋」里是不对的。
-## 换成 `rain_light`（原始素材就是「Light rain」），干净得多。
+## 现在用 `rain_thunder`（雨 + 远处闷雷）——用户听过几种之后挑中的。
 ## 想换回来或换别的，只改这一行常量；备选都在 audio_tracks.gd 的 RAIN_ALTERNATIVES。
 const TRACK := AudioTracks.RAIN_THUNDER
 const PLAY_DB := -13.0

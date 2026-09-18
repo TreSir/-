@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 249 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 251 项测试。
 
 ---
 
@@ -731,7 +731,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 249 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 251 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -741,7 +741,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (249 checks)
+# 期望输出：BLACK_PAGE: PASS (251 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -750,9 +750,9 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
-测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 248），
+测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 250），
 改测试时让它贴着当前数（门槛总比总数少 1：最后一条 check 就是门槛自己）。
-**验收标准是 `PASS (249 checks)` 这个完整字符串，不是「看到 PASS」。**
+**验收标准是 `PASS (251 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -883,11 +883,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 断链有退路、回溯真的退得干净 | 冒烟测试（断链面板 + 快照全等那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (249 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (251 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (249 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (251 checks)
 ```
