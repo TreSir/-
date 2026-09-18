@@ -207,7 +207,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
    · 序章某页 → data/black_page/prologue.json 那页的 "background" 字段
 6. 验收：
        python tools/audit.py
-       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (158 checks)
+       godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (216 checks)
 ```
 
 **第 5 步别偷懒**：图像文件放对了不等于游戏里会用它——
@@ -230,7 +230,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 - [ ] 和 `black_page_room_v1.png` 并排看，亮度/饱和度/透视能接上
 - [ ] 已跑 `--import`
 - [ ] 已接进 `scenes.gd` 或 `prologue.json`
-- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (158 checks)`
+- [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (216 checks)`
 
 ---
 
@@ -281,7 +281,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 2. 在 audio_tracks.gd 里登记常量（★ 唯一的曲目清单）
 3. 跑导入：godot --headless --path <项目> --import
 4. 接到数据上：prologue.json 那一页的 "sfx" 字段（或代码里 sfx.play(常量)）
-5. 验收：python tools/audit.py && 冒烟测试 PASS (158 checks)
+5. 验收：python tools/audit.py && 冒烟测试 PASS (216 checks)
 ```
 
 ### ⚠️ 音频的验收盲区

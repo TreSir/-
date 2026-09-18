@@ -16,7 +16,7 @@ signal finished
 ## 执行器认识的指令集合。**data_loader 的校验直接读这张表**——
 ## 加指令只改这里一处：不会出现「数据写了、引擎不认识」的静默丢弃，
 ## 也不会出现「引擎支持、数据校验先拦下来」。
-const COMMANDS := ["say", "effect", "clue", "unlock", "if", "goto", "sequence", "minigame"]
+const COMMANDS := ["say", "effect", "clue", "unlock", "unlockinfo", "if", "goto", "sequence", "minigame"]
 
 ## 单次 play 最多执行多少步。指令里有 if / goto，数据写错成环就转不出去——
 ## 到顶告警收尾，不把游戏卡死在一次 play 里。
@@ -104,7 +104,11 @@ func _run() -> void:
 			"clue":
 				_write(game.add_clue(str(step[command])))
 			"unlock":
-				_write(game.apply_state({"person." + str(step[command]) + ".discovered": true}))
+				# 认识一个人走口子（不是裸写旗标）：图鉴的小红点由口子统一点。
+				_write(game.unlock_person(str(step[command])))
+			"unlockinfo":
+				var info: Dictionary = step[command]
+				_write(game.unlock_person_info(str(info.get("person", "")), str(info.get("field", ""))))
 			"goto":
 				_go_to(str(step[command]))
 				continue

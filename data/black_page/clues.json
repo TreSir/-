@@ -10,6 +10,11 @@
     ],
     "reliability": "reliable",
     "effects": {
+      "set": {
+        "person.zhou.discovered": true,
+        "person.zhou.info.station_seen": true,
+        "person.xu.info.timeline": true
+      },
       "add": {
         "person.zhou.truth": 8
       }
@@ -26,7 +31,8 @@
     "reliability": "reliable",
     "effects": {
       "set": {
-        "person.zhou.identity": 70
+        "person.zhou.identity": 70,
+        "person.zhou.info.employee_name": true
       }
     }
   },
@@ -42,7 +48,8 @@
     "effects": {
       "set": {
         "person.zhou.identity": 52,
-        "clue.badge.reliability": "forged"
+        "clue.badge.reliability": "forged",
+        "person.zhou.info.identity_gap": true
       },
       "add": {
         "person.zhou.truth": 7
@@ -60,7 +67,8 @@
     "reliability": "reliable",
     "effects": {
       "set": {
-        "person.zhou.identity": 100
+        "person.zhou.identity": 100,
+        "person.zhou.info.real_name": true
       }
     }
   },

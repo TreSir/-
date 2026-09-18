@@ -11,7 +11,7 @@
     "death_text": "手机新闻：物流员工陈某昨夜突然死亡。警方正在核实身份。\n林墨：你为什么刚问完这个人，他就出事了？",
     "death_effects": {
       "set": {
-        "case.missing.status": "frozen"
+        "person.linmo.info.remembers": true
       },
       "add": {
         "linmo_suspicion": 25
@@ -30,8 +30,8 @@
     "death_text": "林墨发来一条消息：许妍被发现时已经没有生命迹象。她随身的资料不见了。",
     "death_effects": {
       "set": {
-        "case.missing.status": "frozen",
-        "testimony_lost": true
+        "testimony_lost": true,
+        "person.linmo.info.remembers": true
       },
       "add": {
         "linmo_suspicion": 20
@@ -49,9 +49,6 @@
     "case": "missing",
     "death_text": "手机新闻：参与失踪案调查的警员林墨突然去世。案件交由另一组人员接手。",
     "death_effects": {
-      "set": {
-        "case.missing.status": "frozen"
-      },
       "add": {
         "linmo_suspicion": 35
       }

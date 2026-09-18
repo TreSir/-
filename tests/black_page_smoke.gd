@@ -3,6 +3,10 @@ const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Runner = preload("res://scripts/core/narrative_runner.gd")
 const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
+## 图鉴读模型与案件状态机：断言直接量它们（界面走的也是这两份）。
+const CodexManager = preload("res://scripts/core/codex_manager.gd")
+const CaseManager = preload("res://scripts/core/case_manager.gd")
+const Rules = preload("res://scripts/core/rules.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
@@ -10,7 +14,7 @@ var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 154
+const UI_CHECK_FLOOR := 212
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -98,7 +102,7 @@ func _run() -> void:
 	# 「有没有可续的存档」= **能不能真的续**，不是「文件读不读得出来」：
 	# 内容过不了校验的存档，开始页不该摆出「继续游戏」。
 	check(game.has_save("black_page_smoke_roundtrip"), "has_save accepts a restorable save")
-	store.write("black_page_smoke_roundtrip", {"schema": 999, "content": "black_page_mvp",
+	store.write("black_page_smoke_roundtrip", {"schema": 999, "content": "black_page_mvp2",
 		"state": {"flags": {}, "inventory": {}}, "pending": [], "journal": []})
 	check(not game.has_save("black_page_smoke_roundtrip"), "has_save rejects a save that fails validation")
 	check(game.end_day().is_empty() and game.person_flag("zhou", "status") == "dead", "next-day death")
@@ -187,6 +191,83 @@ func _run() -> void:
 	check(game.complete_action(game.ticket).is_empty() and game.owns("camera"),
 		"the recorded result is what the commit gate reads")
 
+	# ── 图鉴（§12-14）与案件（§15-17）：解锁 / 结案都走口子 ──────────────
+	# 单活动案件是**世界不变量**：同时两个「进行中」要被体检拦下。
+	# 先用合成声明表直接量这条不变量，再确认它接在共用体检里（写路径都绕不过）。
+	var case_defs := {
+		"case.a.state": {"type": "string", "default": "locked", "values": ["locked", "active", "completed"]},
+		"case.b.state": {"type": "string", "default": "locked", "values": ["locked", "active", "completed"]},
+	}
+	check(not CaseManager.snapshot_error({"case.a.state": "active", "case.b.state": "active"}, case_defs).is_empty(),
+		"two running cases violate the single-active invariant")
+	check(CaseManager.snapshot_error({"case.a.state": "active", "case.b.state": "locked"}, case_defs).is_empty(),
+		"one running case passes the invariant")
+	check(not Rules.snapshot_error({"flags": {"case.a.state": "active", "case.b.state": "active"}, "inventory": {}},
+			case_defs, {"items": {}}).is_empty(),
+		"the invariant is enforced inside the shared snapshot health check")
+	game.new_game()
+	check(game.flag("case.missing.state") == "locked" and game.case_outlook("missing").is_empty(),
+		"a case starts locked with no outcome in reach")
+	check(not game.complete_case().is_empty(), "closing without a running case is rejected")
+	check(game.apply_effects({"set": {"case.missing.state": "active"}}).is_empty()
+			and CaseManager.active_case(game.bundle, game.flags_snapshot()) == "missing",
+		"the case is activated by a data effect and the active case is readable")
+	# 图鉴：三个人口都要有校验；重复解锁无害；小红点由解锁动作自己点、打开页清掉。
+	check(not game.unlock_person("typo").is_empty(), "unlocking an unknown person is rejected")
+	check(not game.unlock_person_info("zhou", "no_such_field").is_empty(), "unlocking an unknown codex field is rejected")
+	check(not game.unlock_person_info("zhou", "station_seen").is_empty(), "a field cannot be unlocked before the person is known")
+	check(game.unlock_person("zhou").is_empty() and game.person_flag("zhou", "discovered") == true,
+		"unlock_person marks the person discovered")
+	check(game.person_flag("zhou", "codex_new") == true, "a fresh unlock raises the codex-new flag")
+	check(game.mark_codex_read("zhou").is_empty() and game.person_flag("zhou", "codex_new") == false,
+		"opening the person page clears the new flag")
+	check(game.unlock_person("zhou").is_empty() and game.person_flag("zhou", "codex_new") == false,
+		"re-unlocking an already known person raises nothing")
+	check(game.unlock_person_info("zhou", "station_seen").is_empty()
+			and game.person_flag("zhou", "info.station_seen") == true
+			and game.person_flag("zhou", "codex_new") == true,
+		"unlocking one codex field raises the new flag")
+	game.mark_codex_read("zhou")
+	check(game.unlock_person_info("zhou", "station_seen").is_empty() and game.person_flag("zhou", "codex_new") == false,
+		"re-unlocking an already read field is harmless and raises nothing")
+	# 线索效果也是解锁的来路之一：数据里写的 discovered / info.<条目> 自动点小红点，
+	# 不靠每个数据作者记得补一笔。
+	game.new_game()
+	act("camera")
+	var zhou_rows: Array = CodexManager.rows(game.bundle, game.flags_snapshot(), "zhou")
+	check(game.person_flag("zhou", "discovered") == true and game.person_flag("zhou", "info.station_seen") == true
+			and game.person_flag("xu", "info.timeline") == true,
+		"clue effects unlock codex entries")
+	check(game.person_flag("zhou", "codex_new") == true and game.person_flag("xu", "codex_new") == true,
+		"every unlock path raises the new flag, clue effects included")
+	check(zhou_rows.size() == 5 and zhou_rows[0].unlocked == true and zhou_rows[1].unlocked == false,
+		"the codex read model reports exactly the unlocked fields")
+	check(zhou_rows[0].title == "公交站的男人", "the read model carries the declared title")
+	# 结案：结果由案件数据里的 outcomes 裁定（条件 → 结果），调用方只说「结案了」。
+	game.new_game()
+	check(game.apply_effects({"set": {"case.missing.state": "active"}}).is_empty(), "activate for the closing test")
+	act("camera")
+	act("badge")
+	act("archive")
+	act("photo")
+	act("testimony")
+	check(game.case_outlook("missing") == "explained", "the outcome rule points at the explained result")
+	check(game.complete_case().is_empty() and game.flag("case.missing.state") == "completed"
+			and game.flag("case.missing.result") == "explained",
+		"completing the case records the data-declared outcome")
+	check(not game.complete_case().is_empty(), "a completed case cannot be closed twice")
+	check(game.case_outlook("missing").is_empty(), "a finished case has no outlook")
+	# 首章落幕 = 结案：finish_case 自己把进行中的案件推完（结果按数据裁定）。
+	game.new_game()
+	check(game.apply_effects({"set": {"case.missing.state": "active"}}).is_empty(), "activate for the chapter-end test")
+	act("camera")
+	act("badge")
+	act("archive")
+	check(game.finish_case("seal").is_empty() and game.flag("case.missing.state") == "completed"
+			and game.flag("case.missing.result") == "unresolved",
+		"finishing the chapter closes the running case with the fallback outcome")
+	game.new_game()
+
 	# ── 叙事执行器（stories.json）的契约 ─────────────────────────────────
 	# 临时剧情挂在**真实 game** 上跑（不是另起一套 mock）：六种指令全走一遍。
 	# 打完就删——测试数据不进游戏内容；状态回滚到检查点，不干扰后面的用例。
@@ -202,6 +283,7 @@ func _run() -> void:
 				{"effect": {"add": {"linmo_trust": 5}}},
 				{"clue": "camera"},
 				{"unlock": "linmo"},
+				{"unlockinfo": {"person": "linmo", "field": "remembers"}},
 				{"goto": "talk"}]},
 			"talk": {"steps": [{"say": ["契约台词一", "契约台词二"]}]},
 		},
@@ -232,8 +314,9 @@ func _run() -> void:
 		spoken.append_array(lines)
 		done.call()
 	check(runner.play("smoke_gate_on").is_empty() and spoken == ["契约台词一", "契约台词二"],
-		"runner walks if → effect → clue → unlock → goto → say")
-	check(int(game.flag("linmo_trust")) == 35 and game.owns("camera") and game.person_flag("linmo", "discovered") == true,
+		"runner walks if → effect → clue → unlock → unlockinfo → goto → say")
+	check(int(game.flag("linmo_trust")) == 35 and game.owns("camera") and game.person_flag("linmo", "discovered") == true
+			and game.person_flag("linmo", "info.remembers") == true,
 		"runner writes state only through the game facade")
 	check(runner.play("smoke_gate_off").is_empty() and int(game.flag("linmo_suspicion")) == 7,
 		"runner takes the else branch when conditions fail")
@@ -380,6 +463,38 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"minigame": "no_such_game"}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_game"),
 		"story minigame references are validated")
+	# 图鉴数据（codex.json）：每条档案要有声明过的解锁旗标、人物与图鉴双向对齐；
+	# 剧情 unlockinfo 引用错条目同样在编译期报出来。
+	broken = compiled.duplicate(true)
+	broken.codex.zhou.fields[0].id = "no_such_field"
+	check(not loader._compile_codex(broken) and loader.error.contains("codex.json:") and loader.error.contains("no_such_field"),
+		"a codex field without a declared unlock flag has source location")
+	broken = compiled.duplicate(true)
+	broken.codex.erase("linmo")
+	check(not loader._compile_codex(broken) and loader.error.contains("linmo"),
+		"the codex must cover every person")
+	broken = compiled.duplicate(true)
+	broken.people.erase("linmo")
+	check(not loader._compile_codex(broken) and loader.error.contains("图鉴里的人物不存在"),
+		"the codex cannot mention a stranger")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"unlockinfo": {"person": "zhou", "field": "no_such_field"}}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_field"),
+		"story unlockinfo references are validated")
+	# 案件数据（cases.json）：状态词表要覆盖三档、结果要在词表里、最后一条裁定无条件兜底——
+	# 不然「切不进去的状态」和「结案落个空结果」都会静默发生。
+	broken = compiled.duplicate(true)
+	broken.flags["case.missing.state"].values = ["locked", "active"]
+	check(not loader._validate_row("cases", "missing", broken.cases.missing, broken) and loader.error.contains("少了状态"),
+		"the case state vocabulary must cover every state the code knows")
+	broken = compiled.duplicate(true)
+	broken.cases.missing.outcomes[0].result = "no_such_result"
+	check(not loader._validate_row("cases", "missing", broken.cases.missing, broken) and loader.error.contains("no_such_result"),
+		"a case outcome must name a declared result")
+	broken = compiled.duplicate(true)
+	broken.cases.missing.outcomes.back().requires = [{"flag": "day", "op": ">=", "value": 1}]
+	check(not loader._validate_row("cases", "missing", broken.cases.missing, broken) and loader.error.contains("兜底"),
+		"the last outcome must be unconditional")
 	await _ui()
 	# 检查数本身就是一道门槛。
 	# 有解析错误时，后面的 check 会静默地不执行，而 PASS/FAIL 只看 failures ——
@@ -505,6 +620,10 @@ func _ui() -> void:
 	ui._play_story("chapter1_open")
 	await get_tree().process_frame
 	check(ui.game.journal.size() == journal_size, "a finished story does not replay its text")
+	# 案件解锁也是剧情 Effect 驱动的（stories.json 的 chapter1_open 里那条 effect）：
+	# 界面不问来路，只读状态——「0 或 1 个进行中」由案件管理器把关。
+	check(ui.game.flag("case.missing.state") == "active" and ui.game.flag("case.missing.result") == "",
+		"the opening story activates the case through a data effect")
 	check(ui.header.text.contains("第 1 天"), "room UI starts")
 	# 顶栏行动点跟着数据声明走（flags.json 的 actions_left.max），不是写死的 3——
 	# 改每日行动数只动数据，这里会跟着增减。
@@ -618,6 +737,21 @@ func _ui() -> void:
 	check(ui.modal_rows.get_child_count() == 4, "a finished minigame shows the report page")
 	ui.modal_rows.get_child(2).pressed.emit()
 	check(ui.game.owns("camera") and ui.game.flag("actions_left") == 2 and not ui.modal.visible, "UI minigame reward once and return")
+	await get_tree().process_frame
+
+	# 图鉴跟着线索长：查过监控 = 认识了这个男人 + 两条档案解锁；
+	# 「新」标记由解锁动作自己点出来——打开单人页就算看过。
+	check(ui.game.person_flag("zhou", "discovered") == true and ui.game.person_flag("zhou", "info.station_seen") == true
+			and ui.game.person_flag("zhou", "codex_new") == true,
+		"the camera clue unlocks the codex and raises the new flag")
+	var zhou_rows: Array = CodexManager.rows(ui.game.bundle, ui.game.flags_snapshot(), "zhou")
+	check(zhou_rows.size() == 5 and zhou_rows[0].unlocked == true and zhou_rows[4].unlocked == false,
+		"the panel sees exactly the unlocked codex fields")
+	ui._open_person("zhou")
+	await get_tree().process_frame
+	check(ui._open_panel == "people" and ui.game.person_flag("zhou", "codex_new") == false,
+		"opening the person page clears the new flag")
+	ui._close_modal()
 	await get_tree().process_frame
 
 	# 调查：场景整张切换 → 底部逐句读 → 读完自动结算回房间（主界面没有推进按钮）

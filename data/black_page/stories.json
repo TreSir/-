@@ -23,6 +23,13 @@
           {
             "effect": {
               "set": {
+                "case.missing.state": "active"
+              }
+            }
+          },
+          {
+            "effect": {
+              "set": {
                 "story.chapter1_open.done": true
               }
             }

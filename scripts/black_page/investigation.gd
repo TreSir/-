@@ -6,6 +6,10 @@ const Rules = preload("res://scripts/core/rules.gd")
 const SaveManager = preload("res://scripts/core/save_manager.gd")
 ## 小游戏结果的词表和形状（normalize / passed）在这里只有这一份。
 const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
+## 图鉴的读模型与解锁校验（设计文档 §12-14）。
+const CodexManager = preload("res://scripts/core/codex_manager.gd")
+## 案件状态机与单活动不变量（设计文档 §15-17）。
+const CaseManager = preload("res://scripts/core/case_manager.gd")
 ## 存档槽名只在这里出现一次：写、读、「有没有存档」都走它。
 const SLOT := "black_page_slot_1"
 var bundle: Dictionary = {}
@@ -140,6 +144,77 @@ func note_minigame(id: String, raw: Variant) -> String:
 	changed.emit()
 	return ""
 
+## 认识一个人（设计文档 §12：图鉴解锁由剧情驱动——`unlock` 指令走这里）。
+## 已经认识过就无事发生——剧情可能因为读档重播后半段，重复执行必须无害。
+func unlock_person(id: String) -> String:
+	if not bundle.people.has(id): return "未知人物：" + id
+	if person_flag(id, "discovered") == true: return ""
+	return _unlock({"person." + id + ".discovered": true})
+
+## 读到一条档案条目（`unlockinfo` 指令走这里，设计文档 §13 的分阶段解锁）。
+## 前置是「已经认识这个人」：不认识就想读他的档案，一定是数据写错了，
+## 拦下来——不然图鉴里会冒出无主条目，玩家看到名字却不知道该点谁。
+func unlock_person_info(id: String, field: String) -> String:
+	var error := CodexManager.unlock_error(bundle, id, field)
+	if not error.is_empty(): return error
+	if person_flag(id, "discovered") != true: return "还没有认识这个人：" + id
+	if person_flag(id, "info." + field) == true: return ""
+	return _unlock({"person." + id + ".info." + field: true})
+
+## 打开过这个人的图鉴页 = 看过了（清掉「有新东西」的小红点）。
+## **只清痕迹、不动内容**：浏览不是获取，解锁永远由剧情/线索驱动（§12.1）。
+func mark_codex_read(id: String) -> String:
+	if person_flag(id, "codex_new") != true: return ""
+	return apply_state({"person." + id + ".codex_new": false})
+
+## 解锁写入的公共事务（认识一个人、读到一条档案都走它）。
+## 和普通 set 的区别：解锁是「玩家知道的东西变多了」——图鉴要亮小红点，
+## 所以统一过 _apply（那里会顺手点 codex_new），再照常校验、提交、广播。
+func _unlock(changes: Dictionary) -> String:
+	var candidate := GameState.snapshot()
+	_apply(candidate, {"set": changes})
+	var error: String = GameState.validate_snapshot(candidate)
+	if not error.is_empty(): return error
+	GameState.restore(candidate)
+	changed.emit()
+	return ""
+
+## 结案（设计文档 §15-16）：把进行中的案件推到 completed，落定结果。
+## 结果不是调用方给的字符串，而是案件数据里的 outcomes 裁定出来的——
+## 调用方只说「结案了」，代码不问结果叫什么。
+func complete_case() -> String:
+	var id := CaseManager.active_case(bundle, GameState.flags)
+	if id.is_empty(): return "没有进行中的案件。"
+	var result := _case_outcome(id)
+	if result.is_empty(): return "案件「%s」没有一个结果的条件成立。" % id
+	var candidate := GameState.snapshot()
+	candidate.flags["case." + id + ".state"] = "completed"
+	candidate.flags["case." + id + ".result"] = result
+	var error: String = GameState.validate_snapshot(candidate)
+	if not error.is_empty(): return error
+	GameState.restore(candidate)
+	changed.emit()
+	return ""
+
+## 这个案子该记什么结果：取案件数据里第一条条件成立的（cases.json 的 outcomes）。
+## 「查得多清楚算哪个结果」是**这一个案子**的叙事裁定，不是引擎知识——
+## 换案子、换判定，改数据就行。
+func _case_outcome(id: String) -> String:
+	for outcome in bundle.cases[id].get("outcomes", []):
+		if matches(outcome.get("requires", [])): return str(outcome.result)
+	return ""
+
+## 案件现在**够格**记什么结果（读模型，给界面显示进展用）。
+## 空串 = 没有进行中的案件、或现在结案只能走无条件兜底（也就是「还没查明白」）。
+## 判定规则仍只有 _case_outcome 一份——这里只回答「是不是兜底」。
+func case_outlook(id: String) -> String:
+	if not bundle.cases.has(id) or str(flag("case." + id + ".state")) != "active": return ""
+	var outcomes: Array = bundle.cases[id].get("outcomes", [])
+	if outcomes.is_empty(): return ""
+	var outcome := _case_outcome(id)
+	if outcome == str((outcomes.back() as Dictionary).get("result", "")): return ""
+	return outcome
+
 func available(id: String) -> bool:
 	if not bundle.actions.has(id) or flag("ending") != "": return false
 	return not flag("action." + id + ".done") and matches(bundle.actions[id].get("requires", []))
@@ -257,15 +332,25 @@ func finish_case(choice: String) -> String:
 			_log(ending.name + "\n" + ending.text)
 			EventBus.ending_reached.emit(ending.id, "")
 			break
+	# 首章落幕 = 案件结案（设计文档 §16）。失败**不拦结局**：结局已经落了，
+	# 这里报错没有可恢复的路径，只会把玩家卡在一个没有出路的房间里。
+	var close_error := complete_case()
+	if not close_error.is_empty(): push_warning("结案未完成：" + close_error)
 	changed.emit()
 	return ""
 
 func _apply(candidate: Dictionary, effects: Dictionary) -> void:
+	var before: Dictionary = candidate.flags.duplicate()
 	candidate.flags.merge(effects.get("set", {}), true)
 	for id in effects.get("add", {}): candidate.flags[id] += effects.add[id]
 	for id in effects.get("inventory", {}):
 		candidate.inventory[id] = candidate.inventory.get(id, 0) + effects.inventory[id]
 		if candidate.inventory[id] == 0: candidate.inventory.erase(id)
+	# 「图鉴里有新东西」由**写入本身**推出来，不靠数据作者记得补一笔：
+	# 数据里写的是解锁（discovered / info.<条目>），小红点是它的痕迹。
+	# 挂在这里 = 所有解锁路径一视同仁（线索 / 行动 / 死亡波及 / 剧情 / 以后新加的）。
+	for person in CodexManager.touched(before, candidate.flags):
+		candidate.flags["person." + person + ".codex_new"] = true
 
 func _log(message: String) -> void:
 	journal.append(message)

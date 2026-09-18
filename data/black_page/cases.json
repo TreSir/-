@@ -2,7 +2,32 @@
   "missing": {
     "name": "许妍失踪案",
     "intro": "许妍于昨夜失去联系。最后的监控里，她与一个男人一起离开公交站。",
-    "status": "investigating",
+    "results": ["explained", "partial", "unresolved"],
+    "outcomes": [
+      {
+        "result": "explained",
+        "requires": [
+          {
+            "flag": "person.zhou.truth",
+            "op": ">=",
+            "value": 80
+          }
+        ]
+      },
+      {
+        "result": "partial",
+        "requires": [
+          {
+            "item": "testimony",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "result": "unresolved"
+      }
+    ],
     "questions": [
       {
         "text": "监控里的男人是谁？",

@@ -130,6 +130,30 @@
     "type": "bool",
     "default": false
   },
+  "person.zhou.codex_new": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.info.station_seen": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.info.employee_name": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.info.identity_gap": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.info.real_name": {
+    "type": "bool",
+    "default": false
+  },
+  "person.zhou.info.protecting": {
+    "type": "bool",
+    "default": false
+  },
   "person.xu.identity": {
     "type": "int",
     "default": 100,
@@ -159,6 +183,26 @@
   "person.xu.discovered": {
     "type": "bool",
     "default": true
+  },
+  "person.xu.codex_new": {
+    "type": "bool",
+    "default": false
+  },
+  "person.xu.info.known": {
+    "type": "bool",
+    "default": true
+  },
+  "person.xu.info.timeline": {
+    "type": "bool",
+    "default": false
+  },
+  "person.xu.info.hiding": {
+    "type": "bool",
+    "default": false
+  },
+  "person.xu.info.voice_cache": {
+    "type": "bool",
+    "default": false
   },
   "person.linmo.identity": {
     "type": "int",
@@ -190,15 +234,35 @@
     "type": "bool",
     "default": false
   },
-  "case.missing.status": {
+  "person.linmo.codex_new": {
+    "type": "bool",
+    "default": false
+  },
+  "person.linmo.info.officer": {
+    "type": "bool",
+    "default": true
+  },
+  "person.linmo.info.remembers": {
+    "type": "bool",
+    "default": false
+  },
+  "case.missing.state": {
     "type": "string",
-    "default": "investigating",
+    "default": "locked",
     "values": [
-      "undiscovered",
-      "investigating",
-      "blocked",
-      "clear",
-      "frozen"
+      "locked",
+      "active",
+      "completed"
+    ]
+  },
+  "case.missing.result": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "explained",
+      "partial",
+      "unresolved"
     ]
   },
   "clue.camera.reliability": {

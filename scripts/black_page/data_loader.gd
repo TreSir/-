@@ -8,6 +8,11 @@ const Runner = preload("res://scripts/core/narrative_runner.gd")
 const Director = preload("res://scripts/black_page/performance_director.gd")
 ## 小游戏结果的类型词表也读代码里那一张（core/minigame_result.gd）。
 const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
+## 案件状态的词表（locked / active / completed）读代码里那一张（core/case_manager.gd）。
+const CaseManager = preload("res://scripts/core/case_manager.gd")
+## 图鉴条目的校验走图鉴管理器的读模型（core/codex_manager.gd）——
+## 「什么算一条合法档案」只有它说了算。
+const CodexManager = preload("res://scripts/core/codex_manager.gd")
 var sources: Dictionary = {}
 var error := ""
 
@@ -84,6 +89,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 		return {}
 	if not _compile_sequences(result): return {}
 	if not _compile_minigames(result): return {}
+	if not _compile_codex(result): return {}
 	if not _compile_stories(result): return {}
 	return result
 
@@ -100,7 +106,7 @@ func _validate_row(group: String, id: String, row: Dictionary, bundle: Dictionar
 				if not row.get(field) is String: return _fail(group, pointer, "缺少 " + field)
 			var message: String = Rules.effects_error(row.get("death_effects", {}), bundle.flags, bundle.catalog)
 			if not message.is_empty(): return _fail(group, pointer + "/death_effects", message)
-			for field in ["identity", "truth", "status", "discovered"]:
+			for field in ["identity", "truth", "status", "discovered", "codex_new"]:
 				if not bundle.flags.has("person." + id + "." + field): return _fail(group, pointer, "缺少人物状态声明 " + field)
 		"clues":
 			if not row.get("description") is String or not row.get("type") is String or not row.get("people") is Array:
@@ -134,7 +140,40 @@ func _validate_row(group: String, id: String, row: Dictionary, bundle: Dictionar
 			if not row.get("text") is String or not bundle.flags.has("event." + id + ".done"): return _fail(group, pointer, "事件缺少文本或完成声明")
 		"cases":
 			if not row.get("intro") is String or not row.get("questions") is Array: return _fail(group, pointer, "案件缺少介绍或疑点")
-			if not bundle.flags.has("case." + id + ".status"): return _fail(group, pointer, "缺少案件状态声明")
+			# 案件状态机：三档词表读 CaseManager.STATES——数据少写一档就报错，
+			# 不让运行时出现「切不进去 / 切不出去」的状态。
+			var state_key := "case." + id + ".state"
+			if not bundle.flags.has(state_key) or not bundle.flags.has("case." + id + ".result"):
+				return _fail(group, pointer, "缺少案件状态声明：" + state_key + " 与 case." + id + ".result")
+			var states: Variant = bundle.flags[state_key].get("values")
+			if not states is Array:
+				return _fail(group, pointer, state_key + " 必须声明 values（状态词表）")
+			for state in CaseManager.STATES:
+				if not state in states: return _fail(group, pointer, state_key + " 少了状态：" + state)
+			# 结案结果：results 是词表，outcomes 是裁定规则（条件 → 结果）。
+			# 最后一条必须无条件兜底——不然「查了半天、结案时落个空结果」会静默发生。
+			var results: Variant = row.get("results")
+			if not results is Array or (results as Array).is_empty():
+				return _fail(group, pointer, "缺少 results（结案结果词表）")
+			var result_values: Variant = bundle.flags["case." + id + ".result"].get("values")
+			if not result_values is Array:
+				return _fail(group, pointer, "case." + id + ".result 必须声明 values（结果词表）")
+			for result in results:
+				if not result in result_values: return _fail(group, pointer + "/results", "结果旗标里没有这个词：" + str(result))
+			var outcomes: Variant = row.get("outcomes")
+			if not outcomes is Array or (outcomes as Array).is_empty():
+				return _fail(group, pointer, "缺少 outcomes（结果裁定）")
+			for i in (outcomes as Array).size():
+				var outcome: Variant = outcomes[i]
+				var outcome_pointer := pointer + "/outcomes/" + str(i)
+				if not outcome is Dictionary or not outcome.get("result") is String:
+					return _fail(group, outcome_pointer, "裁定缺少 result")
+				if not outcome.result in results:
+					return _fail(group, outcome_pointer + "/result", "结果不在 results 里：" + str(outcome.result))
+				var outcome_error: String = Rules.conditions_error(outcome.get("requires", []), bundle.flags, bundle.catalog)
+				if not outcome_error.is_empty(): return _fail(group, outcome_pointer + "/requires", outcome_error)
+			if not (outcomes as Array).back().get("requires", []).is_empty():
+				return _fail(group, pointer + "/outcomes", "最后一条裁定必须无条件兜底")
 			for i in row.questions.size():
 				var question: Variant = row.questions[i]
 				if not question is Dictionary or not question.get("text") is String: return _fail(group, pointer, "疑点格式错误")
@@ -311,6 +350,37 @@ func _compile_minigames(bundle: Dictionary) -> bool:
 				return _fail("minigames", pointer, type_flag + " 少了结果类型：" + type)
 	return true
 
+## 角色图鉴（codex.json）的校验：分阶段解锁的档案条目在这里定形状（设计文档 §13-14）。
+##
+## 两条硬要求，各守一个静默失败：
+##   1. 每条档案都要有声明过的解锁旗标（person.<id>.info.<条目>，bool）——
+##      漏声明的话，解锁会写到不存在的旗标上，运行期才炸；
+##   2. 图鉴与人物**双向对齐**——少一边就是「这个人打不开图鉴」或者
+##      「图鉴里有个不存在的人」。
+func _compile_codex(bundle: Dictionary) -> bool:
+	for id in bundle.codex:
+		var entry: Variant = bundle.codex[id]
+		var pointer := "/" + str(id)
+		if not bundle.people.has(id): return _fail("codex", pointer, "图鉴里的人物不存在：" + str(id))
+		if not entry is Dictionary or not entry.get("fields") is Array:
+			return _fail("codex", pointer, "缺少 fields 数组")
+		var fields: Array = entry.fields
+		if fields.is_empty(): return _fail("codex", pointer, "fields 不能为空")
+		var seen: Array = []
+		for index in fields.size():
+			var field: Variant = fields[index]
+			var field_pointer := pointer + "/fields/" + str(index)
+			if not field is Dictionary or not field.get("id") is String or not field.get("title") is String or not field.get("text") is String:
+				return _fail("codex", field_pointer, "条目字段不完整（id / title / text）")
+			if field.id in seen: return _fail("codex", field_pointer, "条目 id 重复：" + str(field.id))
+			seen.append(field.id)
+			var key := "person." + str(id) + ".info." + str(field.id)
+			if not bundle.flags.has(key) or bundle.flags[key].get("type") != "bool":
+				return _fail("codex", field_pointer, "缺少（bool）解锁声明：" + key)
+	for id in bundle.people:
+		if not bundle.codex.has(id): return _fail("codex", "/" + str(id), "人物没有图鉴：" + str(id))
+	return true
+
 ## 指令流剧情（stories.json）的校验：结构 + 引用 + 指令参数。
 ##
 ## 这里**只校验，不改写**：剧情数据进来是什么形状，执行器读到的就是什么形状。
@@ -366,6 +436,14 @@ func _validate_story_step(command: String, argument: Variant, pointer: String, n
 		"unlock":
 			if not argument is String or not bundle.people.has(argument):
 				return _fail("stories", pointer + "/unlock", "未知人物：" + str(argument))
+			return true
+		"unlockinfo":
+			if not argument is Dictionary: return _fail("stories", pointer + "/unlockinfo", "unlockinfo 必须为对象")
+			var info: Dictionary = argument
+			for key in info:
+				if key not in ["person", "field"]: return _fail("stories", pointer + "/unlockinfo", "未知字段：" + str(key))
+			var info_error: String = CodexManager.unlock_error(bundle, str(info.get("person", "")), str(info.get("field", "")))
+			if not info_error.is_empty(): return _fail("stories", pointer + "/unlockinfo", info_error)
 			return true
 		"sequence":
 			if not argument is String or not bundle.sequences.has(argument):

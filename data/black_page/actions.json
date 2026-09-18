@@ -9,11 +9,7 @@
       "camera"
     ],
     "text": "雨丝盖住了镜头。你把三个时间片段重新排在一起。\n男人先到，许妍后到。他们一起走了。画面里没有明显的拉扯。",
-    "effects": {
-      "set": {
-        "person.zhou.discovered": true
-      }
-    }
+    "effects": {}
   },
   "badge": {
     "name": "核对物流公司员工证",
@@ -111,7 +107,8 @@
         "person.zhou.truth": 85,
         "person.xu.truth": 85,
         "person.xu.status": "hidden",
-        "case.missing.status": "clear"
+        "person.zhou.info.protecting": true,
+        "person.xu.info.hiding": true
       },
       "add": {
         "linmo_trust": 10
@@ -145,7 +142,8 @@
     "effects": {
       "set": {
         "person.zhou.truth": 40,
-        "clue.testimony.reliability": "dubious"
+        "clue.testimony.reliability": "dubious",
+        "person.xu.info.voice_cache": true
       }
     }
   },

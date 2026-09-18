@@ -8,8 +8,11 @@ const Store = preload("res://scripts/core/save_store.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 
 ## 存档格式版本 / 内容标识。对不上宁可拒绝，不猜。
+## 内容标识在**状态含义变了**的时候要跟着走：这次把 case.<id>.status 换成了
+## state / result 两件套、人物档案改成逐条解锁——旧存档的旗标已经不认了，
+## 与其让它栽在「未声明 Flag」上，不如在这里干净地拒绝。
 const SCHEMA := 1
-const CONTENT := "black_page_mvp"
+const CONTENT := "black_page_mvp2"
 ## 日志最多留这么多条——超了丢最旧的。写入和校验共用同一个数。
 const JOURNAL_CAP := 100
 

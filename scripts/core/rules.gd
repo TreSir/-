@@ -1,5 +1,8 @@
 extends RefCounted
 ## 纯函数式的旗标规则求值。data_loader / investigation / game_state 共用同一套，不重复实现。
+## 单活动案件这类**世界不变量**也收在这里：一体检就全查，写路径绕不过去。
+const CaseManager = preload("res://scripts/core/case_manager.gd")
+
 static func number(value: Variant) -> bool:
 	return value is int or value is float
 
@@ -39,7 +42,8 @@ static func snapshot_error(snapshot: Dictionary, definitions: Dictionary, catalo
 		if not catalog.get("items", {}).has(id): return "存档有未知道具：" + str(id)
 		var count: Variant = snapshot.inventory[id]
 		if not integer(count) or count <= 0 or count > catalog.items[id].get("max_stack", 99): return "非法道具数量：" + str(id)
-	return ""
+	# 世界不变量（最多一个进行中的案件）也在这里：所有写路径共用的同一份体检。
+	return CaseManager.snapshot_error(snapshot.flags, definitions)
 
 static func effects_error(effects: Variant, definitions: Dictionary, catalog: Dictionary) -> String:
 	if not effects is Dictionary: return "effects 必须为对象"

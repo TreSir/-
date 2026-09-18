@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 109 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 216 项测试。
 
 ---
 
@@ -152,7 +152,7 @@
 > `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
 > 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（11 个）
+### `scripts/core/` —— 与内容无关的机制（13 个）
 
 | 文件 | 职责 |
 | --- | --- |
@@ -162,8 +162,10 @@
 | `save_manager.gd` | **存档的形状**：打包 / 校验 / 写读。静态函数，不持有状态——「什么时候能存」是 investigation 的规矩 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
 | `minigame_result.gd` | **小游戏结果的词表与形状**（`{type, score, data}` + `passed()`）。小游戏、数据校验、结算闸门都读这一份 |
+| `case_manager.gd` | **案件状态机**（`locked → active → completed`）：`active_case` 查询 + 单一活动案件的不变量检查。词表 `STATES` 与 `data_loader` 共用 |
+| `codex_manager.gd` | **图鉴的读模型与解锁校验**：`unlock_error` / `rows`（这个人现在看得见的档案）/ `touched`（这次状态变化翻开了谁的页）。解锁时机由剧情数据决定，这里只回答「看得见什么」 |
 | `scripted.gd` | **页数组剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
-| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `if` / `goto` / `sequence` / `minigame`；表现、演出、小游戏回调都由调用方注入 |
+| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `unlockinfo` / `if` / `goto` / `sequence` / `minigame`；表现、演出、小游戏回调都由调用方注入 |
 | `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
 | `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
 | `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
@@ -177,7 +179,8 @@
 > `minigame` 指令交给注入的 `play_minigame` 回调（`minigame_manager.gd`），
 > **演完 / 打完回调才放行**——剧情就这么等待一段重点演出或一局小游戏。
 > **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）；
-> 演出动作表 `ACTIONS`、小游戏结果词表 `TYPES` 同理。
+> 演出动作表 `ACTIONS`、小游戏结果词表 `TYPES`、案件状态词表 `CaseManager.STATES`、
+> 图鉴条目校验 `CodexManager.unlock_error` 同理——**校验读的就是执行读的那一份**。
 
 ---
 
@@ -272,6 +275,7 @@ data/black_page/*.json
 | `clue_description(id)` | 线索现在该显示的正文（先取条件满足的数据变体，没有就用基础描述） |
 | `matches(conditions)` | 条件求值（`requires` 那套） |
 | `available(action_id)` | 这条行动现在能不能做 |
+| `case_outlook(id)` | 案件现在会走向哪个结果（**只在进行中、且不是兜底结果时非空**）（见七.5） |
 | `has_save()` | 有没有**能真的续**的存档（读得出来还要过得了校验，否则启动页不显示「继续游戏」） |
 | `snapshot()` / `flags_snapshot()` | 整份状态 / 只读旗标快照 |
 | `bundle` | 编译后的数据 |
@@ -287,6 +291,9 @@ data/black_page/*.json
 | `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
 | `end_day()` | 结束一天，兑现所有 pending | 事务式，失败则状态零变化 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
+| `unlock_person(id)` / `unlock_person_info(id, field)` | 认识一个人 / 解锁一条图鉴档案 | 剧情 `unlock` / `unlockinfo` 指令走这两个；重复执行无害，解锁后自动记 `codex_new`（见七.4） |
+| `mark_codex_read(id)` | 清掉这个人的「有新档案」标记 | 打开单人图鉴页时调 |
+| `complete_case()` | 把进行中的案件按 `outcomes` 定案（写 `state` / `result`） | `finish_case` 收尾时自动调；没有进行中的案件会被拒绝 |
 | `reveal_ui(keys)` / `apply_state(changes)` | 点亮侧栏入口 / 剧情写状态（纯 `set`） | 给「非行动」的脚本化段落用 |
 | `apply_effects(effects)` | 剧情写状态（完整 `set` / `add` / `inventory`） | 指令流剧情执行器走这个 |
 | `add_clue(id)` | 给一条线索（已有则跳过，重复执行无害） | 同上 |
@@ -302,10 +309,11 @@ data/black_page/*.json
 ### 实体状态靠命名约定挂 flag
 
 ```
-person.<id>.{status,identity,truth,discovered}
+person.<id>.{status,identity,truth,discovered,codex_new}
+person.<id>.info.<条目>            ← 图鉴档案解锁（见七.4）
 clue.<id>.reliability
 action.<id>.done
-case.<id>.status
+case.<id>.{state,result}           ← 单活动案件状态机（见七.5）
 event.<id>.done
 minigame.<id>.{type,score}         ← 最近一局打成什么样（见八）
 ui.<key>                       ← 侧栏入口是否点亮
@@ -325,12 +333,12 @@ ui.<key>                       ← 侧栏入口是否点亮
 | --- | --- |
 | `flags.json` | 所有旗标的类型与默认值 |
 | `people.json` | 人物（假名 / 真名 / 身份 / 描述） |
-| `clues.json` | 线索（含 `people` 字段，图鉴的关联靠它推导；`variants` 按条件换正文，界面不再特判） |
+| `clues.json` | 线索（含 `people` 字段；`variants` 按条件换正文，界面不再特判；拿线索时写进哪条 `person.*` 也走它的 `effects`） |
 | `actions.json` | 调查方向（`requires` / `clues` / `effects` / `text`；小游戏类只写 `"minigame": "<id>"` 引用，场景与参数在 `minigames.json`） |
-| `cases.json` | 案件 |
+| `cases.json` | 案件。状态机三档词表在代码里（`CaseManager.STATES`）；`outcomes` 按序求值定结果，**最后一条必须无条件** |
 | `events.json` | 定时事件 |
 | `endings.json` | 结局。**必须有且仅有一个无条件兜底，且优先级最低** |
-| `codex.json` | 人物图鉴的档案条目（每条带 `at` 阈值） |
+| `codex.json` | 人物图鉴的档案条目（`fields`: `{id, title, text}`）。解锁**不写在这里**——存在 `person.<id>.info.<field>` 旗标里，由剧情/线索数据写入（见七.4） |
 | `transitions.json` | 转场（`cut` / `fade` / `slide`；优先级 **单条行动 > 目标场景 > 全局默认**） |
 | `prologue.json` | 序章剧本（页数组：背景 / 卡片 / 热区 / 选项） |
 | `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出 / 小游戏） |
@@ -339,7 +347,7 @@ ui.<key>                       ← 侧栏入口是否点亮
 
 ---
 
-## 七、两条必须记住的机制
+## 七、必须记住的机制
 
 ### 1. 事务提交：先算在副本上，全过了再换进去
 
@@ -383,6 +391,39 @@ if token != game.ticket: return    # 这次行动已经被取消/替换，丢弃
 
 「调查途中把玩家留在原地」的第三个变体是**读档**：存档不记录「你站在哪个场景」，
 所以读档成功一律 `_enter_room()` 落回房间，否则画面和弹层内容都停在旧世界。
+
+### 4. 图鉴：解锁写在数据里，小红点由状态变化推导
+
+图鉴是**分阶段解锁**的：`codex.json` 只说「有哪些档案条目」，「什么时候看得见」
+不写在图鉴里，而是剧情 / 线索数据用 effects 写三条旗标：
+
+```
+person.<id>.discovered      认识这个人（图鉴里出现这张卡）
+person.<id>.info.<field>    一条档案解锁
+person.<id>.codex_new       有新内容（打开单人页时清掉）
+```
+
+- 解锁的**所有来路**——`unlock` / `unlockinfo` 指令、线索 / 行动 / 事件效果、口子直调——
+  都写进 `investigation`。`_apply` 每次写完拿 `CodexManager.touched(before, after)` 比对，
+  谁的页翻新了就补 `codex_new`；界面不推导解锁规则，只问 `CodexManager.rows()` 画什么。
+  `touched` 只认 `person.*` 下**翻成 true 的 bool 旗标**——`identity` / `truth` 这类数值走过不点红点。
+- `unlock_person_info` 要求先 `discovered`：不认识的人没有档案页。
+- `data_loader` 双向对账 `people.json` ↔ `codex.json`：有图鉴没人物、有人物漏条目、
+  条目旗标没在 `flags.json` 声明——都是启动报错。
+
+### 5. 案件：单活动状态机，结果条件写在数据里
+
+状态机 `locked → active → completed`。**同一时刻最多一个案件处于 `active`**——这是
+**世界不变量**，检查挂在 `Rules.snapshot_error` 末尾：结算 / 读档 / 存档校验……
+任何写状态的路径都绕不过它，写进两个 active 的存档会被拒绝。
+
+- **激活在数据里**：剧情 effects 写 `case.<id>.state = "active"`（开场就是这么做的）；
+  **定案在口子里**：`complete_case()` 读 `cases.json` 的 `outcomes`——按序求值，
+  第一个条件成立的胜出——写 `state = "completed"` + `result`；`finish_case` 收尾时自动调。
+- `outcomes` 的结果词表与 `case.<id>.result` 的 `values` 对账，最后一条必须无条件（兜底），
+  都在 `data_loader` 编译期拦下。
+- 界面读 `case_outlook(id)`（只在进行中、且不是兜底结果时非空）决定「线索已经连起来了」
+  这类提示；案件卡上的状态字读 `case.<id>.state`——**界面不自己实现条件求值，也不自己存状态**。
 
 ### 游戏循环
 
@@ -495,7 +536,8 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 | `say` | 字符串 / 字符串数组 | 台词：先记进日志（回看要有），再交给表现层逐句演，演完继续 |
 | `effect` | effects 对象（`set` / `add` / `inventory`） | 写状态（`game.apply_effects`） |
 | `clue` | 线索 id | 给线索（已有则跳过，重复执行无害） |
-| `unlock` | 人物 id | 点亮人物（`person.<id>.discovered = true`） |
+| `unlock` | 人物 id | 点亮人物（`person.<id>.discovered = true`）；翻新图鉴页 → 自动记 `codex_new` |
+| `unlockinfo` | `{person, field}` | 解锁一条图鉴档案（`person.<id>.info.<field>`；要求**先认识这个人**，条目必须在该人的 `codex.json` 条目表里） |
 | `if` | `{requires, then, else?}` | 条件成立跳 `then`；不成立跳 `else`（没写就继续下一步） |
 | `goto` | 节点名 | 无条件跳 |
 | `sequence` | 演出 id（`sequences.json` 的键） | **重点演出**：交给演出导演演，演完继续下一步（见下） |
@@ -633,7 +675,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 158 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 216 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -643,7 +685,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (158 checks)
+# 期望输出：BLACK_PAGE: PASS (216 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -652,8 +694,9 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
-测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败），改测试时让它贴着当前数。
-**验收标准是 `PASS (158 checks)` 这个完整字符串，不是「看到 PASS」。**
+测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 212），
+改测试时让它贴着当前数。
+**验收标准是 `PASS (216 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -723,7 +766,8 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 一个小游戏 | `data/black_page/minigames.json`（场景 + 配置）· 在调查行动或剧情指令里引用 · 需要的旗标写进 `flags.json` | ✓ 场景存在与结果声明在编译期校验 |
 | 一条调查方向 | `actions.json` | ✓ 引用校验 |
 | 一条线索 / 一个人 / 一个案件 / 一个结局 / 一个事件 | 对应的 JSON | ✓ 跨文件引用校验 |
-| 一条人物档案条目 | `codex.json` | ✓ |
+| 一条人物档案条目 | `codex.json` | ✓ loader 双向对账 people ↔ codex |
+| 一条档案的解锁时机 | 在剧情 / 线索的 `effects` 里写 `person.<id>.info.<field>`（或 `unlockinfo` 指令） | ✓ 旗标缺声明 / 条目不存在都报错 |
 | 一张图 | 放 `assets/` + `--import` + 在 `scenes.gd` 或 JSON 里引用 | ✓ audit 查未引用素材 |
 | 一个音效 / 一首曲目 | 放 `assets/audio/` + 在 `audio_tracks.gd` 登记 + JSON 里引用 | ✗ 靠人（audit 只查未引用） |
 
@@ -735,11 +779,12 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | **一种剧情指令** | `core/narrative_runner.gd` 的 **`COMMANDS` 表 + `_run` 的 match** | **1 处**（校验读同一张表） | ✓ 未知指令在编译期报错 |
 | **一种演出动作** | `performance_director.gd` 的 **`ACTIONS` 表 + `_act` 的 match** | **1 处**（校验读同一张表） | ✓ 未知动作在编译期报错 |
 | **一种小游戏结果类型** | `core/minigame_result.gd` 的 **`TYPES` 表 + `normalize` 的 match** | **1 处**（校验读同一张表） | ✓ 数据里的未知结果类型在编译期报错 |
+| **一种案件状态** | `core/case_manager.gd` 的 **`STATES` 表**（+ `main.gd` 的状态显示字） | 2 处 | ✓ 数据 `values` 少一档在编译期报错；✗ 显示字靠人 |
 | 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
 | 一个数据文件（新组） | `data/` 建 JSON + `data_loader` 加载列表 +（需要就）校验 | 2~3 处 | ✓ 对账 data 文件与 loader 列表 |
-| 一个新的人物 | `people.json` + `flags.json` 里四个 `person.*` 声明 + **立绘给齐 3 张** | 3 处 | ✓ 缺状态声明会启动报错；✗ 立绘靠人 |
+| 一个新的人物 | `people.json` + `codex.json`（档案条目）+ `flags.json` 里五个 `person.*` 与每条 `info.*` 的声明 + **立绘给齐 3 张** | 4 处 | ✓ 人/图鉴双向对账、旗标缺声明会启动报错；✗ 立绘靠人 |
 | 一个新状态旗标 | `flags.json` 一行 | 1 处 | ✓ 未声明的旗标写入会报错 |
 
 ### 三条设计约束（加东西之前先想）
@@ -777,11 +822,11 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (158 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (216 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (158 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (216 checks)
 ```

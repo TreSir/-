@@ -29,6 +29,9 @@ const BgmPlayer = preload("res://scripts/black_page/bgm_player.gd")
 const Director = preload("res://scripts/black_page/performance_director.gd")
 ## 小游戏经理：开一局、等打完、把结果落进状态。界面不自己管小游戏的生命周期。
 const MiniGameManager = preload("res://scripts/black_page/minigame_manager.gd")
+## 图鉴的读模型（哪些档案条目已解锁）。**界面不自己判断解锁**（设计文档 §12.1）：
+## 这里只负责把已解锁的摆出来。
+const CodexManager = preload("res://scripts/core/codex_manager.gd")
 ## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
 const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
@@ -42,7 +45,10 @@ const Scenes = preload("res://scripts/black_page/scenes.gd")
 const Hotspots = preload("res://scripts/black_page/hotspots.gd")
 
 const PERSON_STATUS := {"normal": "正常", "missing": "下落不明", "fugitive": "逃亡", "injured": "受伤", "dead": "死亡", "arrested": "被捕", "hidden": "隐藏", "left": "离开城市"}
-const CASE_STATUS := {"undiscovered": "未发现", "investigating": "调查中", "blocked": "暂无调查方向", "clear": "真相基本明确", "frozen": "冻结"}
+## 案件状态机（设计文档 §15-16）与结案结果的显示词。
+## locked 会被面板直接跳过，所以不在这里摆「未解锁」。
+const CASE_STATES := {"active": "调查中", "completed": "已结案"}
+const CASE_RESULTS := {"explained": "真相查清", "partial": "部分查清", "unresolved": "未能查清"}
 const RELIABILITY := {"reliable": "可靠", "dubious": "存疑", "contradictory": "矛盾", "forged": "伪造"}
 ## 剩余行动 → 时刻。索引是 actions_left（0..max），
 ## 条目数要 ≥ flags.json 的 actions_left.max + 1。
@@ -1225,8 +1231,9 @@ func _open_case() -> void:
 	_begin_panel("case", "案件", "正在调查的事")
 	var found := 0
 	for id in game.bundle.cases:
-		var status: String = game.flag("case." + id + ".status")
-		if status == "undiscovered": continue
+		var state: String = game.flag("case." + id + ".state")
+		# 没解锁的案件不摆出来（设计文档 §15-16：0 或 1 个进行中的案件）。
+		if state == "locked": continue
 		found += 1
 		var entry: Dictionary = game.bundle.cases[id]
 		var column := VBoxContainer.new()
@@ -1235,11 +1242,14 @@ func _open_case() -> void:
 		var head := HBoxContainer.new()
 		head.add_theme_constant_override("separation", 12)
 		head.add_child(UI.heading(str(entry.name), UI.SIZE_TITLE))
-		var chip := UI.accent_chip(CASE_STATUS[status])
+		var chip := UI.accent_chip(CASE_STATES[state])
 		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		head.add_child(chip)
 		column.add_child(head)
 		column.add_child(UI.flow(str(entry.intro), UI.SIZE_SMALL + 1, Color("c6d5dd")))
+		var note := _case_note(str(id), state)
+		if not note.is_empty():
+			column.add_child(UI.flow(note, UI.SIZE_SMALL, UI.TEXT_DIM))
 		column.add_child(UI.rule())
 		column.add_child(_label_micro("已知事实"))
 		column.add_child(_clue_chips(id))
@@ -1267,6 +1277,22 @@ func _open_case() -> void:
 	if found == 0:
 		modal_rows.add_child(UI.flow("还没有接触到任何案件。", UI.SIZE_BODY, UI.TEXT_DIM))
 	_end_panel("合上案卷")
+
+## 案件的进展注脚：从现有状态**推导**，不为此新存旗标。
+##
+##   · 已结案 → 写出结果（结案结果由案件数据裁定，这里只翻成人话）
+##   · 关键人物不在了 → 先说这个：有些门从此永远关着，比「查到哪了」更要紧
+##   · 按裁定规则现在就够格拿到「非兜底」结果 → 线索已经连起来了
+func _case_note(id: String, state: String) -> String:
+	if state == "completed":
+		return "已结案：%s。" % CASE_RESULTS.get(str(game.flag("case." + id + ".result")), "结果不详")
+	var gone: Array = []
+	for person in game.bundle.people:
+		if game.bundle.people[person].case != id: continue
+		if game.person_flag(person, "status") == "dead": gone.append(str(game.bundle.people[person].name))
+	if not gone.is_empty(): return "关键人物已不在：" + "、".join(gone) + "。"
+	if not game.case_outlook(id).is_empty(): return "线索已经连起来了。"
+	return ""
 
 ## 人物图鉴：先是一排肖像卡，点进去才是这个人的档案。
 func _open_people() -> void:
@@ -1296,7 +1322,15 @@ func _open_people() -> void:
 		art.custom_minimum_size = Vector2(178, 190)
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		column.add_child(art)
-		column.add_child(UI.label(game.person_name(id), UI.SIZE_BODY, UI.TEXT_BRIGHT))
+		var name_row := HBoxContainer.new()
+		name_row.add_theme_constant_override("separation", 8)
+		name_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_row.add_child(UI.label(game.person_name(id), UI.SIZE_BODY, UI.TEXT_BRIGHT))
+		if bool(game.person_flag(id, "codex_new")):
+			var fresh := UI.accent_chip("新")
+			fresh.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			name_row.add_child(fresh)
+		column.add_child(name_row)
 		column.add_child(UI.label(PERSON_STATUS[game.person_flag(id, "status")], UI.SIZE_MICRO, UI.TEXT_DIM))
 		card.add_child(column)
 		flow.add_child(card)
@@ -1308,10 +1342,14 @@ func _open_people() -> void:
 
 ## 单独一人的图鉴页：肖像 + 逐段解锁的档案 + 关联线索。
 ##
-## 解锁定档全部从**现有状态**推导，不新增旗标：
-##   · 肖像清晰度 ← `person.*.identity`（身份确认 %）
-##   · 档案条目   ← `person.*.truth`（真相掌握 %）
+## 这一页只读状态、只摆内容，**不自己判断解锁**：
+##   · 肖像清晰度 ← `person.*.identity`（身份确认 %），从现有状态推导，零新旗标
+##   · 档案条目   ← 逐条解锁的旗标（person.*.info.<条目>），解锁由剧情/线索驱动——
+##                  界面只摆出来，不自己判断（设计文档 §12.1）
 func _open_person(id: String) -> void:
+	# 打开即「看过」：清掉「新」标记。先清再建页面——
+	# changed 会顺带刷新侧栏和图鉴卡，回到上一层时标记已经没了。
+	game.mark_codex_read(id)
 	var person: Dictionary = game.bundle.people[id]
 	var identity := int(game.person_flag(id, "identity"))
 	var truth := int(game.person_flag(id, "truth"))
@@ -1340,10 +1378,10 @@ func _open_person(id: String) -> void:
 	column.add_child(UI.rule())
 	column.add_child(_label_micro("档案"))
 	var locked := 0
-	for entry in game.bundle.codex.get(id, {}).get("entries", []):
-		if int(entry.get("at", 0)) <= truth:
-			column.add_child(UI.label(str(entry.get("title", "")), UI.SIZE_BODY, UI.TEXT_BRIGHT))
-			column.add_child(UI.flow(str(entry.get("text", "")), UI.SIZE_SMALL + 1, Color("c6d5dd")))
+	for field in CodexManager.rows(game.bundle, game.flags_snapshot(), id):
+		if field.unlocked:
+			column.add_child(UI.label(str(field.title), UI.SIZE_BODY, UI.TEXT_BRIGHT))
+			column.add_child(UI.flow(str(field.text), UI.SIZE_SMALL + 1, Color("c6d5dd")))
 		else:
 			locked += 1
 	if locked > 0:
