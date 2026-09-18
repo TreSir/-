@@ -55,5 +55,22 @@
         ]
       }
     }
+  },
+  "chapter1_end": {
+    "name": "首章落幕",
+    "start": "gate",
+    "nodes": {
+      "gate": {
+        "requires": [
+          {
+            "flag": "person.linmo.status",
+            "op": "!=",
+            "value": "dead"
+          }
+        ],
+        "broken": "林墨不在了。\n没有人能接住你查到的这些东西，案子失去了继续查下去的必要条件。",
+        "steps": []
+      }
+    }
   }
 }

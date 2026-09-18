@@ -16,6 +16,7 @@ extends Control
 ##     （_ask_write 会直接改 2 和 3 的文字）。
 ##   · 小游戏：0 标题、1 小游戏实例、2 返回按钮。
 ##   · 调查结果：0 标题、1 正文、2 提交按钮、3 返回按钮（放弃这次调查）。
+##   · 断链：0 标题、1 正文、2 回溯按钮（有检查点才摆）、3 先留在这里。
 ##   · 顶栏：header 是「第 N 天」；_next_day 是「进入次日」按钮。
 
 const Investigation = preload("res://scripts/black_page/investigation.gd")
@@ -33,6 +34,9 @@ const MiniGameManager = preload("res://scripts/black_page/minigame_manager.gd")
 ## 图鉴的读模型（哪些档案条目已解锁）。**界面不自己判断解锁**（设计文档 §12.1）：
 ## 这里只负责把已解锁的摆出来。
 const CodexManager = preload("res://scripts/core/codex_manager.gd")
+## 断链的收场文案（标题 / 回溯按钮 / 面板正文）。**只有一份**——
+## 断链会发生在多个出口上，文案散在界面里就会漂。
+const FailureManager = preload("res://scripts/core/failure_manager.gd")
 ## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
 const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
 ## 热区建层与 UV 换算的共用组件——序章那套也用它。
@@ -73,6 +77,9 @@ var modal_rows: VBoxContainer
 var scripted: Scripted
 ## 指令流剧情的执行器。一局一个、反复用；台词怎么演由 display 接到 `_say`。
 var story: Runner
+## 当前这段剧情的「接着往下走」回调（_play_story 的 done）。
+## 只留一份：剧情同时在等两个回调的话，前一段的收尾会混进下一段里。
+var _story_done: Callable = Callable()
 var launch: Launch
 var rain: RainAmbience
 var music: BgmPlayer
@@ -686,8 +693,8 @@ func _reveal_game() -> void:
 ## 台词怎么演由 `_say` 负责（display 回调），状态写入由 game 把关，
 ## 界面在这里只是个「接线员」，自己不碰数据、不碰状态。
 ##
-## `done` 在**演完或开不了播**时调用（保证恰好一次），调用方不用自己分辨
-## 「同步演完 / 中途要等 / 数据没加载」这些边角——传进来就一定会被叫到。
+## `done` 在**演完或开不了播**时调用。**断链时不调用**（见 _show_broken_chain）：
+## 「接着往下走」的前提是世界线还在，断了就该拿出路，而不是硬着头皮往下演。
 func _play_story(story_id: String, done: Callable = Callable()) -> void:
 	if not is_instance_valid(story):
 		story = Runner.new()
@@ -698,16 +705,68 @@ func _play_story(story_id: String, done: Callable = Callable()) -> void:
 		# 打完把执行器放行继续往下演。
 		story.play_minigame = Callable(self, "_run_story_minigame")
 		story.finished.connect(refresh)
+		story.finished.connect(_on_story_finished)
+		# 断链是另一种收场（和 finished 分开的两个信号）：出路统一在这里收口。
+		story.broken.connect(_show_broken_chain)
+	# 新的这一段接管回调：上一段要是断在半路，它的旧回调就到这里为止。
+	_story_done = done
 	var error: String = story.play(story_id)
 	if not error.is_empty():
 		push_warning("剧情「%s」没播起来：%s" % [story_id, error])
-		if done.is_valid(): done.call()
+		_on_story_finished()
 		return
 	if not story.busy():
 		# 整段都是同步步（没有要等的台词 / 演出），已经演完了。
-		if done.is_valid(): done.call()
+		# 不过「不忙」也可能是**断在半路**——那是另一种收场，交给 broken 处理过。
+		if story.broken_reason.is_empty(): _on_story_finished()
 		return
-	if done.is_valid(): story.finished.connect(done, CONNECT_ONE_SHOT)
+
+## 剧情收场（演完 / 出错）时把调用方放行。**取出来先清掉再调**——
+## 回调里可能又开一段新剧情（_play_story 会覆盖 _story_done），
+## 先清后调，新那一段的回调就不会被这一段的收尾卷走。
+func _on_story_finished() -> void:
+	var done := _story_done
+	_story_done = Callable()
+	if done.is_valid(): done.call()
+
+## 因果链断了：剧情节点的必要条件不再成立（条件写在 data/black_page/stories.json
+## 的节点上，原因文案也由它自己给）。**这不是「游戏结束」**——
+## 是一块说明加一条退路，文案在 FailureManager 里只有一份。
+##
+## 两条出路都要摆出来：
+##   · 回溯——回到「还没有写下那一笔」的时候（落笔时自动存的检查点）；
+##   · 先留在这里——不逼玩家立刻做决定，菜单里的读档 / 重新开始都还在。
+## 检查点不在就**直说没有**：玩家绝不能面对一个没有出口的死胡同。
+func _show_broken_chain(reason: String) -> void:
+	var ready: bool = game.checkpoint_ready()
+	_open_panel = ""
+	_sync_nav()
+	_clear_modal()
+	modal.show()
+	# 断链面板后面没有行动锁，ESC 和「先留在这里」一个语义（见 _unhandled_key_input）。
+	_investigation_modal = false
+	modal_rows.add_child(_modal_head("断链", FailureManager.TITLE))
+	var body_label := UI.flow(FailureManager.body(reason, ready), UI.SIZE_BODY, Color("d3e0e7"))
+	body_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	modal_rows.add_child(body_label)
+	if ready:
+		var roll := UI.primary_button(FailureManager.ROLLBACK)
+		roll.pressed.connect(_roll_back)
+		modal_rows.add_child(roll)
+	var stay := UI.ghost_button("先留在这里")
+	stay.pressed.connect(_close_modal)
+	modal_rows.add_child(stay)
+	_fit_modal()
+
+## 回溯到使用死亡笔记之前。**成功就落回房间**——理由和 _load_from_menu 一样：
+## 检查点不记录「你站在哪个场景」，留在断链现场会看到上一个世界的内容。
+## 回来时把「写的那一笔已经不在纸上」也说清楚，玩家才知道世界被拨回去了。
+func _roll_back() -> void:
+	var error: String = game.roll_back()
+	if not error.is_empty():
+		_message(error)
+		return
+	_enter_room("", "世界已经回到你写下那一笔之前。")
 
 ## 把最近一条叙述性日志当成「当前台词」。
 func _latest_line() -> String:
@@ -1446,9 +1505,12 @@ func _open_notebook() -> void:
 	for id in game.bundle.people:
 		if not bool(game.person_flag(id, "discovered")): continue
 		listed += 1
-		var writable: bool = game.can_write(id)
-		var row := UI.action_row("写下「%s」" % game.person_name(id), "落笔" if writable else "身份不足", writable)
-		if writable: row.pressed.connect(_ask_write.bind(str(id)))
+		# 提示词和落笔的守卫读**同一份判断**（game.write_error）：
+		# 灰着的那一行说的就是灰掉的原因——「身份不足」这种笼统说法
+		# 会把「已经死了」「已经在纸上」全盖住。
+		var blocked: String = game.write_error(str(id))
+		var row := UI.action_row("写下「%s」" % game.person_name(id), "落笔" if blocked.is_empty() else blocked, blocked.is_empty())
+		if blocked.is_empty(): row.pressed.connect(_ask_write.bind(str(id)))
 		modal_rows.add_child(row)
 	if listed == 0:
 		modal_rows.add_child(UI.flow("纸上还没有可以写的名字。", UI.SIZE_BODY, UI.TEXT_DIM))
@@ -1456,12 +1518,18 @@ func _open_notebook() -> void:
 		modal_rows.add_child(UI.flow("纸上已有墨迹。后果还没有传来。", UI.SIZE_SMALL, UI.AMBER))
 	if int(game.flag("day")) >= 2:
 		var seal := UI.primary_button("封存黑页")
-		seal.pressed.connect(func(): _confirm("封存黑页", "进入次日，接收最后的消息，然后结束首章。", func(): _message(game.finish_case("seal"))))
+		seal.pressed.connect(func(): _confirm("封存黑页", "进入次日，接收最后的消息，然后结束首章。", func(): _end_chapter("seal")))
 		modal_rows.add_child(seal)
 		var keep := UI.ghost_button("保留黑页")
-		keep.pressed.connect(func(): _confirm("保留黑页", "进入次日，接收最后的消息，然后结束首章。", func(): _message(game.finish_case("keep"))))
+		keep.pressed.connect(func(): _confirm("保留黑页", "进入次日，接收最后的消息，然后结束首章。", func(): _end_chapter("keep")))
 		modal_rows.add_child(keep)
 	_end_panel("合上黑页", _return_to_room)
+
+## 结束首章。**先过闸门再落幕**（stories.json 的 chapter1_end）：
+## 这一章的收场要有人接得住——林墨不在了，这条世界线就断在闸门上，
+## 玩家得到的是断链面板（还有一条回溯的出路），而不是一个照常落幕的结局。
+func _end_chapter(choice: String) -> void:
+	_play_story("chapter1_end", func(): _message(game.finish_case(choice)))
 
 func _label_micro(text: String) -> Label:
 	return UI.label(text, UI.SIZE_MICRO, UI.ACCENT)

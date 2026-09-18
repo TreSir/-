@@ -10,8 +10,15 @@ const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
 const CodexManager = preload("res://scripts/core/codex_manager.gd")
 ## 案件状态机与单活动不变量（设计文档 §15-17）。
 const CaseManager = preload("res://scripts/core/case_manager.gd")
-## 存档槽名只在这里出现一次：写、读、「有没有存档」都走它。
+## 死亡笔记的世界规则：能不能写、写下去兑现成什么。**只有一份**——
+## 这里的 write_name / end_day 和界面上的提示读的都是它。
+const DeathNoteSystem = preload("res://scripts/core/death_note_system.gd")
+## 正式存档的槽名（写、读、「有没有存档」都走它）。
 const SLOT := "black_page_slot_1"
+## 落笔前的自动检查点（「回溯至使用死亡笔记之前」读的就是这个槽）。
+## **和正式存档分开两个槽**：笔记的动作不该挤掉玩家自己的存档，
+## 而它必须在落笔之后仍然活着——回溯正是回来读它。
+var checkpoint_slot := "black_page_slot_checkpoint"
 var bundle: Dictionary = {}
 var journal: Array = []
 var pending: Array = []
@@ -32,6 +39,8 @@ func new_game() -> void:
 	ticket += 1
 	active_action = ""
 	pending.clear()
+	# 检查点属于上一局的世界：留着它，新世界的「回溯」就可能退到别人的剧情里。
+	SaveManager.erase(checkpoint_slot)
 	# 日志留空：开场正文**是剧情数据**（stories.json 的 chapter1_open），
 	# 由叙事执行器播出来、顺手记进日志。这里不再硬编码文字——
 	# 改台词只改数据文件，代码不掺内容。
@@ -266,19 +275,44 @@ func complete_action(token: int) -> String:
 	changed.emit()
 	return ""
 
-func can_write(id: String) -> bool:
-	if not bundle.people.has(id) or not active_action.is_empty() or flag("ending") != "": return false
-	if not person_flag(id, "discovered") or person_flag(id, "status") == "dead": return false
-	for entry in pending:
-		if entry.person == id: return false
-	return true
+## 现在为什么不能写这个名字；能写就返回空串。
+##
+## 界面上的提示（黑页面板）和 write_name 的守卫读的是**同一份判断**——
+## 各判一份就会漂，漂了就出现「点亮了却写不进去」这种自相矛盾。
+## 前三问是全局闸门（本模块的守卫），名字本身的规矩在 DeathNoteSystem。
+func write_error(id: String) -> String:
+	if not active_action.is_empty(): return "先结束当前调查。"
+	if flag("ending") != "": return "首章已经落幕。"
+	return DeathNoteSystem.write_error(bundle, GameState.flags, pending, id)
 
+## 落笔。**先存检查点，再上纸**——这一步写下去可能把世界写断，
+## 断了要能退回到「那一笔还没有写下」的时候（设计文档 §28：写错也不会毁档）。
+## 检查点失败就不落笔：没有安全网的落笔违背了这条承诺，宁可让玩家重试。
 func write_name(id: String) -> String:
-	if not can_write(id): return "当前不能书写这个名字。"
-	pending.append({"person": id, "name": person_name(id), "valid": person_flag(id, "identity") == 100, "day": int(flag("day"))})
+	var blocked := write_error(id)
+	if not blocked.is_empty(): return blocked
+	var check_error := SaveManager.write(checkpoint_slot, snapshot())
+	if not check_error.is_empty(): return "无法写下这一笔（检查点未存下）：" + check_error
+	pending.append({"person": id, "name": person_name(id), "valid": DeathNoteSystem.knows_true_name(GameState.flags, id), "day": int(flag("day"))})
 	_log("你写下了「%s」。墨水慢慢干了。\n窗外的车流声没有变化。" % person_name(id))
 	changed.emit()
 	return ""
+
+## 回溯：把世界拨回**使用死亡笔记之前**（落笔时自动存下的检查点）。
+##
+## 断链面板上那条退路走这里。**检查点不被消费**——退回去之后玩家可能又写、
+## 又断，那一次回溯读的还是它，重复回溯是幂等的。
+## 拒绝条件只有一个：调查进行中（半空中的调查带不过去，行动锁也对不上）。
+func roll_back() -> String:
+	if not active_action.is_empty(): return "请先结束当前调查。"
+	var loaded: Dictionary = SaveManager.read(checkpoint_slot)
+	return str(loaded.error) if loaded.has("error") else restore(loaded.data)
+
+## 有没有**可以真的回溯**的检查点。断链面板据此决定给不给那条退路——
+## 读得出来还不够，内容要过得了校验（和「继续游戏」同一把尺子：
+## 过不了的存档点下去只会把错误打在看不见的字幕带上）。
+func checkpoint_ready() -> bool:
+	return has_save(checkpoint_slot)
 
 ## 结束今天：兑现落笔（死亡 / 划痕）、天数 +1、跑定时事件。
 ## **日子由玩家自己推**（顶栏的「进入次日」）——没有行动预算、也没有自动跳日，
@@ -287,16 +321,10 @@ func end_day() -> String:
 	if not active_action.is_empty() or flag("ending") != "": return "当前不能结束一天。"
 	var candidate := GameState.snapshot()
 	var messages: Array = []
+	# 落笔怎么兑现（写对 / 划痕、代价怎么记、连锁写在哪）是死亡笔记的规则，
+	# 在 DeathNoteSystem 里只有一份；这里只管事务：在副本上兑现，过不了校验就整体作废。
 	for entry in pending:
-		if entry.valid:
-			candidate.flags["person." + entry.person + ".status"] = "dead"
-			candidate.flags.writes += 1
-			candidate.flags.erosion += 1
-			_apply(candidate, bundle.people[entry.person].death_effects)
-			messages.append(bundle.people[entry.person].death_text)
-		else:
-			candidate.flags.wrong_writes += 1
-			messages.append("黑页上的「%s」被一道细痕划掉。\n没有相关死亡消息。那道痕迹却留在纸上。" % entry.name)
+		messages.append(DeathNoteSystem.realize(candidate, bundle, entry, _apply))
 	candidate.flags.day += 1
 	for id in bundle.events:
 		var event: Dictionary = bundle.events[id]
@@ -381,7 +409,7 @@ func load_game() -> String:
 ## 只查文件读不读得出来是不够的：内容过不了校验（版本不符 / 结构损坏 /
 ## 引用了已经不存在的结局）时，「继续游戏」点下去只会把错误打在
 ## 开始页看不见的字幕带上，玩家会以为游戏坏了。
-## slot 参数只为测试留口子，游戏里一律走默认槽位。
+## slot 参数：检查点回溯（checkpoint_ready）也走它；游戏里一律走默认槽位。
 func has_save(slot: String = SLOT) -> bool:
 	var loaded: Dictionary = SaveManager.read(slot)
 	if loaded.has("error"): return false

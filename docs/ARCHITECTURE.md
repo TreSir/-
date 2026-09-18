@@ -88,7 +88,7 @@
 
 **表现层永远不碰状态，只调 `investigation` 的公开方法。**
 
-这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 223 项测试。
+这条撑住了整个项目：引擎层零 UI 依赖，所以能 headless 跑完 249 项测试。
 
 ---
 
@@ -152,7 +152,7 @@
 > `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
 > 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（13 个）
+### `scripts/core/` —— 与内容无关的机制（15 个）
 
 | 文件 | 职责 |
 | --- | --- |
@@ -160,6 +160,8 @@
 | `json_source.gd` | JSON 读取 + source map（报错能定位到文件与行号） |
 | `save_store.gd` | 存档文件读写（盘上的字节） |
 | `save_manager.gd` | **存档的形状**：打包 / 校验 / 写读。静态函数，不持有状态——「什么时候能存」是 investigation 的规矩 |
+| `death_note_system.gd` | **死亡笔记的规矩**：能不能写（守卫：未知人物 / 没见过的 / 已死的 / 已在纸上）、写对了怎么兑现（`dead` + `writes` / `erosion` + `death_effects`）、写错了留什么（划痕 + `wrong_writes`） |
+| `failure_manager.gd` | **断链的收场文案**：标题「因果链已断裂」/ 正文拼装 / 回溯按钮的字。断链的**原因**来自数据（节点自己的 `broken`），这里只管面板怎么说 |
 | `minigame.gd` | 小游戏基类。子类自己 emit 一次 `finish({...})` |
 | `minigame_result.gd` | **小游戏结果的词表与形状**（`{type, score, data}` + `passed()`）。小游戏、数据校验、结算闸门都读这一份 |
 | `case_manager.gd` | **案件状态机**（`locked → active → completed`）：`active_case` 查询 + 单一活动案件的不变量检查。词表 `STATES` 与 `data_loader` 共用 |
@@ -179,8 +181,9 @@
 > `minigame` 指令交给注入的 `play_minigame` 回调（`minigame_manager.gd`），
 > **演完 / 打完回调才放行**——剧情就这么等待一段重点演出或一局小游戏。
 > **指令表 `COMMANDS` 是校验和执行共用的那一张表**（`data_loader` 照着它查数据）；
-> 演出动作表 `ACTIONS`、小游戏结果词表 `TYPES`、案件状态词表 `CaseManager.STATES`、
-> 图鉴条目校验 `CodexManager.unlock_error` 同理——**校验读的就是执行读的那一份**。
+> 节点字段表 `NODE_FIELDS`、演出动作表 `ACTIONS`、小游戏结果词表 `TYPES`、
+> 案件状态词表 `CaseManager.STATES`、图鉴条目校验 `CodexManager.unlock_error` 同理——
+> **校验读的就是执行读的那一份**。
 
 ---
 
@@ -275,6 +278,8 @@ data/black_page/*.json
 | `clue_description(id)` | 线索现在该显示的正文（先取条件满足的数据变体，没有就用基础描述） |
 | `matches(conditions)` | 条件求值（`requires` 那套） |
 | `available(action_id)` | 这条行动现在能不能做 |
+| `write_error(id)` | 现在为什么不能写这个名字；能写就返回空串。**黑页面板灰掉那一行显示的就是它**（见七.6） |
+| `checkpoint_ready()` | 有没有**可以真的回溯**的检查点（断链面板据此决定给不给那条退路）（见七.6） |
 | `case_outlook(id)` | 案件现在会走向哪个结果（**只在进行中、且不是兜底结果时非空**）（见七.5） |
 | `has_save()` | 有没有**能真的续**的存档（读得出来还要过得了校验，否则启动页不显示「继续游戏」） |
 | `snapshot()` / `flags_snapshot()` | 整份状态 / 只读旗标快照 |
@@ -288,7 +293,8 @@ data/black_page/*.json
 | `begin_action(id)` / `cancel_action()` | 开始 / 取消行动 | 二者都会 `ticket += 1` |
 | `complete_action(token)` | 结算行动 | **必须带发起时的 token**；小游戏类行动读 `minigame.<id>.type` 判通过；失败也要放行动锁（见七.3） |
 | `note_minigame(id, result)` | 记录一局小游戏的结果 | 小游戏经理打完 / 被打断时调；归一化成 `{type, score, data}` 后写进状态（见八） |
-| `write_name(id)` | 落笔（延迟结算，进 `pending`） | — |
+| `write_name(id)` | 落笔（延迟结算，进 `pending`） | **落笔前先自动存一份检查点**（回溯的落点）；检查点存不下就拒绝落笔（见七.6） |
+| `roll_back()` | 回溯到**使用死亡笔记之前**（读检查点恢复） | 断链面板那条退路走它；检查点不被消费，重复回溯是幂等的（见七.6） |
 | `end_day()` | 玩家**进入次日**：兑现所有 pending、天数 +1、跑定时事件 | 事务式，失败则状态零变化；**唯一的时间推进口**，顶栏「进入次日」走它 |
 | `finish_case(choice)` | 抉择 + 结局判定 | — |
 | `unlock_person(id)` / `unlock_person_info(id, field)` | 认识一个人 / 解锁一条图鉴档案 | 剧情 `unlock` / `unlockinfo` 指令走这两个；重复执行无害，解锁后自动记 `codex_new`（见七.4） |
@@ -425,6 +431,41 @@ person.<id>.codex_new       有新内容（打开单人页时清掉）
 - 界面读 `case_outlook(id)`（只在进行中、且不是兜底结果时非空）决定「线索已经连起来了」
   这类提示；案件卡上的状态字读 `case.<id>.state`——**界面不自己实现条件求值，也不自己存状态**。
 
+### 6. 死亡笔记：落笔先落检查点，断链有退路
+
+**能不能写，只有一份判断**：`DeathNoteSystem.write_error()`。`game.write_error(id)`
+在前面加上两道本模块的闸门（调查进行中 / 首章已落幕）——黑页面板灰掉的那一行、
+`write_name` 的守卫，读的都是它。各判一份就会漂，漂了就出现「点亮了却写不进去」。
+
+**落笔前先存检查点**（独立槽位 `checkpoint_slot`，不是玩家存档）：
+
+```
+write_name → 守卫过了 → 把「现在的世界」写进检查点 → 才进 pending
+```
+
+- 检查点**不记录玩家在哪一局**：`new_game()` 抹掉它（新世界不能退到别人的剧情里），
+  `load_game()` 不动它（读档也还能回溯），重复落笔覆盖它（退回去的是**最近那一笔之前**）。
+- **检查点失败就不落笔**：没有安全网的落笔违背「写错也不会毁档」这条承诺，
+  宁可让玩家重试（返回「无法写下这一笔（检查点未存下）」）。
+- 回溯 `roll_back()` **不消费检查点**：退回去之后玩家可能又写、又断，读的还是它，
+  重复回溯是幂等的。拒绝条件只有一个——调查进行中（半空中的调查带不过去）。
+
+**断链 = 剧情节点的必要条件不成立**（设计文档 §26）：节点上写 `requires`，
+进节点时条件不成立就不往下演，改发 `broken`（原因取自节点自己的 `broken` 文案）。`broken`
+**不是** `finished`——「演完了」和「走不下去了」是两种收场：等 `finished` 的人要往下走，
+等 `broken` 的人要拿出路。出路由 `main.gd` 收口（断链面板），文案在 `FailureManager` 里只有一份：
+
+```
+断链面板 = 原因（数据里的 broken）+ 一条退路（有检查点才摆「回溯」，否则直说没有）
+```
+
+**断链不是「游戏结束」**：不逼玩家立刻做决定（「先留在这里」就是关掉面板），
+菜单里的读档 / 重新开始都还在；面板可以再进（再按一次封存黑页）。
+
+本切片的第一道闸门是**首章落幕**：`stories.json` 的 `chapter1_end` 要求林墨还在——
+不在了，这一章就没有继续收场的必要，玩家拿到的是断链面板而不是照常落幕。
+换别的收场条件，只改这一段数据（见 §十二）。
+
 ### 游戏循环
 
 ```
@@ -440,9 +481,10 @@ person.<id>.codex_new       有新内容（打开单人页时清掉）
 `day >= N` / 人物状态，到点就把路线换掉（本切片：`deadline` / `broken` 把
 `testimony` 换成打捞路线 `fallback`）。
 
-**落笔 = 延迟结算**：`write_name` 只往 `pending` 队列塞记录，当场世界不变；
-`end_day` 才兑现——写对（`identity == 100`）→ 目标 `status=dead`、`writes+1`、`erosion+1`、跑 `death_effects`；
-写错 → `wrong_writes+1`，只留一道划痕。`erosion` / `wrong_writes` 是喂给结局的账本。
+**落笔 = 延迟结算**（设计文档 §30：不会立刻显示目标死亡）：`write_name` 只往 `pending`
+队列塞记录，当场世界不变；`end_day` 才兑现——写对（`identity == 100`）→ 目标 `status=dead`、
+`writes+1`、`erosion+1`、跑 `death_effects`；写错 → `wrong_writes+1`，只留一道划痕。
+`erosion` / `wrong_writes` 是喂给结局的账本。（落笔前自动存的检查点见七.6。）
 
 ---
 
@@ -548,7 +590,16 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 | `sequence` | 演出 id（`sequences.json` 的键） | **重点演出**：交给演出导演演，演完继续下一步（见下） |
 | `minigame` | 小游戏 id（`minigames.json` 的键） | **一局小游戏**：交给小游戏经理开，打完（或被打断）继续下一步（见下） |
 
-**没有 `end` 指令**：节点跑完 = 剧情结束，发 `finished`。
+**节点字段**（表在执行器的 `NODE_FIELDS`，`data_loader` 照着校验）：`steps`（指令步，必须）、
+`requires`（**进这个节点的必要条件**）、`broken`（条件不成立时，收场面板要说的话）。
+
+- `requires` 的写法和调查方向 / 事件一模一样（校验走 `Rules.conditions_error`）；
+- **有 `requires` 就必须有 `broken`**——闸门断了要说得出为什么，说不出理由的闸门编译期就被拦下，
+  未知节点字段同理（`require` 拼成 `requires` 之类的错，静默的后果就是闸门永远不响）；
+- 条件不成立 = **因果链断了**（见七.6）：执行器发 `broken`——**不是**「这一步跳过」，
+  也不是 `finished`，世界线的事由调用方拿出路。
+
+**没有 `end` 指令**：节点跑完 = 剧情结束，发 `finished`（断链是另一种收场，发 `broken`）。
 
 几条约定，都是踩过坑的：
 
@@ -680,7 +731,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 - [ ] 新的异步流程带 `ticket` 了吗？
 - [ ] 新的结算逻辑走 `snapshot → validate → restore` 了吗？
 - [ ] `data_loader` 的加载列表更新了吗（新增数据文件时）？
-- [ ] 冒烟测试**跑了 223 项**且全过？（见下）
+- [ ] 冒烟测试**跑了 249 项**且全过？（见下）
 - [ ] 新增图片后跑过 `godot --headless --path <项目> --import` 了吗？
 
 ---
@@ -690,7 +741,7 @@ Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
 ```bash
 # 冒烟测试（headless）
 godot --headless --path <项目> res://tests/black_page_smoke.tscn
-# 期望输出：BLACK_PAGE: PASS (223 checks)
+# 期望输出：BLACK_PAGE: PASS (249 checks)
 ```
 
 ### ⚠️ 「PASS」不够，**必须核对检查数**
@@ -699,9 +750,9 @@ godot --headless --path <项目> res://tests/black_page_smoke.tscn
 而 failures 仍是 0 → 假 PASS。
 
 实际踩过：`main.gd` 编译失败，输出 `PASS (53 checks)`——比当时的期望值少了二十多项。
-测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 219），
-改测试时让它贴着当前数。
-**验收标准是 `PASS (223 checks)` 这个完整字符串，不是「看到 PASS」。**
+测试里另有一道 `UI_CHECK_FLOOR` 兜底（检查数低于门槛直接判失败，当前值 248），
+改测试时让它贴着当前数（门槛总比总数少 1：最后一条 check 就是门槛自己）。
+**验收标准是 `PASS (249 checks)` 这个完整字符串，不是「看到 PASS」。**
 
 ### 架构审计（改完一轮跑一次）
 
@@ -752,6 +803,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | `game.flag()` 返回 `Variant` | 不能用 `:=` 推类型，要写成 `var x: bool = not bool(game.flag(...))` |
 | 日子只由 `end_day()` 推 | **没有任何地方会自动跳日**：调查不推进时间，`complete_action` 也不碰 `day`。唯一出口是顶栏「进入次日」（`main._ask_next_day` → 确认 → `game.end_day()`）。数据里要时限就用 `events.json` 的 `requires: day >= N`，别在代码里加计时 |
 | `_apply()` 与 `GameState.apply` 有重复 | 事务模式造成的（一个只改副本、一个改完即提交），可接受，但别让它们跑偏 |
+| 字典相等是**按类型**比的 | `{"day": 2} != {"day": 2.0}`。存档过一趟 JSON 再回来，数字全是 float：想断言「读回来的快照和原来一样」，两边都要过一趟 `JSON.stringify` + `parse_string`，否则永远为假（回溯的测试踩过） |
 | 精灵图路径是**动态拼**的 | `"black_page_portrait_%s%s.png"`——静态扫描会误判为「没人用」 |
 
 ---
@@ -767,6 +819,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | --- | --- | --- |
 | 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
 | 一段指令流剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
+| 一道剧情闸门（进这个节点要有某条件，断了说什么） | `stories.json` 节点的 `requires` + `broken` | ✓ 有 `requires` 必须写 `broken`、未知节点字段都在编译期报错 |
 | 一段重点演出（时间轴打点） | `data/black_page/sequences.json` + 在 `stories.json` 里用 `sequence` 指令引用 | ✓ 动作名与素材引用在编译期校验 |
 | 一个小游戏 | `data/black_page/minigames.json`（场景 + 配置）· 在调查行动或剧情指令里引用 · 需要的旗标写进 `flags.json` | ✓ 场景存在与结果声明在编译期校验 |
 | 一条调查方向 | `actions.json` | ✓ 引用校验 |
@@ -785,6 +838,8 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | **一种演出动作** | `performance_director.gd` 的 **`ACTIONS` 表 + `_act` 的 match** | **1 处**（校验读同一张表） | ✓ 未知动作在编译期报错 |
 | **一种小游戏结果类型** | `core/minigame_result.gd` 的 **`TYPES` 表 + `normalize` 的 match** | **1 处**（校验读同一张表） | ✓ 数据里的未知结果类型在编译期报错 |
 | **一种案件状态** | `core/case_manager.gd` 的 **`STATES` 表**（+ `main.gd` 的状态显示字） | 2 处 | ✓ 数据 `values` 少一档在编译期报错；✗ 显示字靠人 |
+| **死亡笔记的规矩**（什么能写 / 怎么写对 / 写错留什么） | `core/death_note_system.gd` 一处；界面上的提示走 `game.write_error()` | **1 处** | ✓ 冒烟测试守着守卫、兑现与回溯 |
+| **剧情节点的字段**（如再加一个和 `requires` 同级的） | `core/narrative_runner.gd` 的 **`NODE_FIELDS` 表 + `_run` 里的读法** | **1 处**（校验读同一张表） | ✓ 未知节点字段在编译期报错 |
 | 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
@@ -826,12 +881,13 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 | 三层单向、只有 `investigation` 写状态 | `tools/audit.py` |
 | 数据只经 `data_loader` | `tools/audit.py`（loader 列表对账） |
 | 结算走事务、异步带 token | 冒烟测试（损坏存档 / 过期回调那几项） |
+| 断链有退路、回溯真的退得干净 | 冒烟测试（断链面板 + 快照全等那几项） |
 | 切图能生效 | `godot --headless --path <项目> --import` |
-| 整套没退化 | `PASS (223 checks)` 这个完整字符串 |
+| 整套没退化 | `PASS (249 checks)` 这个完整字符串 |
 
 **改完代码跑这两条，都过才算完成：**
 
 ```bash
 python tools/audit.py
-godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (223 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (249 checks)
 ```

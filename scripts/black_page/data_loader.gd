@@ -401,6 +401,22 @@ func _compile_stories(bundle: Dictionary) -> bool:
 			var node_pointer := pointer + "/nodes/" + str(node_id)
 			if not node is Dictionary or not node.get("steps") is Array:
 				return _fail("stories", node_pointer, "节点缺少 steps 数组")
+			# 节点字段照执行器的 NODE_FIELDS 校验（和指令表一个规矩）。
+			# 未知字段**直接报错**，不静默忽略：把 requires 拼成 require 之类，
+			# 静默的后果就是闸门永远不响——「写了、没执行」正是最难查的那种坏。
+			for field in node:
+				if not (str(field) in Runner.NODE_FIELDS):
+					return _fail("stories", node_pointer + "/" + str(field),
+							"节点有未知字段，可用：%s" % ", ".join(Runner.NODE_FIELDS))
+			# 节点入口的必要条件（设计文档 §26）：条件本身照常校验，
+			# 断了要用节点自己的 broken 文案说清为什么——说不出理由的闸门不许上。
+			var required: Variant = node.get("requires", [])
+			var requirement: String = Rules.conditions_error(required, bundle.flags, bundle.catalog)
+			if not requirement.is_empty(): return _fail("stories", node_pointer + "/requires", requirement)
+			var broken: Variant = node.get("broken", "")
+			if not broken is String: return _fail("stories", node_pointer + "/broken", "broken 必须是字符串")
+			if not (required as Array).is_empty() and (broken as String).strip_edges().is_empty():
+				return _fail("stories", node_pointer + "/broken", "有 requires 的节点必须写 broken（断链时要说得出为什么）")
 			var steps: Array = node.steps
 			for index in steps.size():
 				var step: Variant = steps[index]

@@ -19,6 +19,12 @@ func write(name: String, data: Dictionary) -> String:
 	error = DirAccess.rename_absolute(temporary, path)
 	return "" if error == OK else "无法替换存档文件。"
 
+func erase(name: String) -> String:
+	var path := DIRECTORY.path_join(name + ".json")
+	if not FileAccess.file_exists(path): return ""
+	var error := DirAccess.remove_absolute(path)
+	return "" if error == OK else "无法删除存档文件。"
+
 func read(name: String) -> Dictionary:
 	var path := DIRECTORY.path_join(name + ".json")
 	if not FileAccess.file_exists(path): return {"error": "还没有存档。"}

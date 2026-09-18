@@ -37,6 +37,8 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 
 - **事务提交** —— `snapshot()` → 在副本上改 → `validate_snapshot()` → 全过才整体换入。失败返回错误，**状态零变化**
 - **ticket 令牌** —— 异步回调要带发起时的 token，`token != game.ticket` 就丢弃
+- **落笔 = 延迟结算** —— 写名只进 `pending`，次日才兑现；落笔前先自动存一份检查点，
+  世界线断了（剧情节点的必要条件不成立）可以回溯到那一笔之前
 
 ---
 
@@ -84,10 +86,10 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 
 ```bash
 python tools/audit.py                                            # 期望 exit 0
-godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (223 checks)
+godot --headless --path <项目> res://tests/black_page_smoke.tscn # 期望 PASS (249 checks)
 ```
 
-⚠️ **验收标准是 `PASS (223 checks)` 这个完整字符串，不是「看到 PASS」。**
+⚠️ **验收标准是 `PASS (249 checks)` 这个完整字符串，不是「看到 PASS」。**
 测试只在 `failures == 0` 时报 PASS；一旦有解析错误，后面的检查全部不执行，
 failures 仍是 0 → **假 PASS**。改了测试要同步更新这个数字，以及
 `docs/ARCHITECTURE.md` 里对应的说法。
@@ -111,6 +113,8 @@ godot --headless --path <项目> --import
 - **☰** 里收着：存档 / 读取 / 重新开始 / 雨声 / 背景音乐
 - 存档目前**只有一个槽位**：`user://saves/black_page_slot_1.json`
   （写盘是「先写 `.tmp` 再改名」，不会写出半个存档）
+- 另有 `user://saves/black_page_slot_checkpoint.json`：**落笔前自动存的检查点**，
+  断链回溯读它；新开一局会抹掉，读档不会
 
 ---
 

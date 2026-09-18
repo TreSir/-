@@ -59,3 +59,7 @@ static func write(slot: String, data: Dictionary) -> String:
 
 static func read(slot: String) -> Dictionary:
 	return Store.new().read(slot)
+
+## 抹掉一个槽位（新开一局时清检查点用）。槽位本来就空着不算失败。
+static func erase(slot: String) -> String:
+	return Store.new().erase(slot)

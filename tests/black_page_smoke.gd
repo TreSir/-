@@ -8,13 +8,16 @@ const CodexManager = preload("res://scripts/core/codex_manager.gd")
 const CaseManager = preload("res://scripts/core/case_manager.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 const Store = preload("res://scripts/core/save_store.gd")
+## 断链的收场文案：断链面板上该出现哪几个字，断言读的就是这一份。
+const FailureManager = preload("res://scripts/core/failure_manager.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
 var failures := 0
 ## 检查数门槛。**报 PASS 不等于跑完**——解析错误会让后面的 check 静默跳过，
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
-## 加断言或删断言后，这个数要跟着改。
-const UI_CHECK_FLOOR := 219
+## 加断言或删断言后，这个数要跟着改。贴着总数减一：最后一条 check 就是门槛自己，
+## 它跑到的时候还没把自己数进去。
+const UI_CHECK_FLOOR := 248
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -67,6 +70,29 @@ func _esc() -> InputEventKey:
 	event.pressed = true
 	return event
 
+## 按文字找弹层里的按钮。**不按索引**：面板里摆了哪些东西是内容的一部分，
+## 索引会随内容漂，文字不会——测试想点的是「那个写着回溯的按钮」。
+## 两种摆法都认：文字在 Button 自己身上（primary / ghost 按钮），
+## 或在一个子 Label 里（action_row 的行标题与灰掉的提示词）。
+func _button(ui: Node, text: String) -> Button:
+	for child in ui.modal_rows.get_children():
+		if child is Button and (child.text == text or _has_text(child, text)): return child
+	return null
+
+## 节点子树里有没有这句话（子串匹配）。用来断言「灰掉的那一行写了原因」
+## 这类拼装控件——action_row 的文字在子控件里，不是 Button.text。
+func _has_text(node: Node, text: String) -> bool:
+	if node is Label and node.text.contains(text): return true
+	for child in node.get_children():
+		if _has_text(child, text): return true
+	return false
+
+## 存档写盘读盘就是过一趟 JSON：数字回来时是 float，而 GDScript 的字典相等
+## **按类型**比（`{"day": 2} != {"day": 2.0}`）。比较「从磁盘回来的快照」时
+## 两边都过这一趟，比的是内容——哪一项没退干净照样瞒不过去。
+func _json_round_trip(data: Dictionary) -> Dictionary:
+	return JSON.parse_string(JSON.stringify(data))
+
 func identity_route() -> void:
 	act("camera")
 	act("badge")
@@ -81,6 +107,9 @@ func identity_route() -> void:
 
 func _run() -> void:
 	add_child(game)
+	# 槽位隔离：冒烟测试**绝不碰真实存档**——进度槽和落笔检查点槽都换成 smoke 槽，
+	# 否则跑一次测试就会把玩家的自动检查点覆盖掉。
+	game.checkpoint_slot = "black_page_smoke_checkpoint"
 	var error: String = game.open()
 	check(error.is_empty(), "content compiles: " + error)
 	if not error.is_empty():
@@ -99,7 +128,27 @@ func _run() -> void:
 	var store = Store.new()
 	check(store.write("black_page_smoke_roundtrip", written).is_empty(), "save write")
 	check(store.write("black_page_smoke_roundtrip", written).is_empty(), "save overwrite")
+	# ── 死亡笔记：守卫 / 检查点 / 回溯（设计文档 §28）───────────────────────
+	# 能不能写、为什么不能写，只有一份判断——黑页面板上显示的就是它。
+	check(game.write_error("zhou").contains("黑页上") and game.write_error("linmo").contains("见过")
+			and game.write_error("nobody").contains("未知人物"),
+		"the write guard explains itself through the rule the notebook shows")
+	# 落笔之前先自动存一份检查点：「写错了也不会毁档」靠的就是它。
+	check(game.checkpoint_ready(), "a confirmed write lays down the rollback checkpoint")
+	check(game.end_day().is_empty() and game.person_flag("zhou", "status") == "dead" and int(game.flag("day")) == 2,
+		"the night realizes the written name")
+	check(game.write_error("zhou").contains("已经死了"), "the dead cannot be written again")
+	# 回溯：世界必须回到**那一笔还没有写下**的时候——死人、天数、纸上的墨迹全部退回去。
+	# 快照全等是这里最硬的断言：哪一项没退干净都瞒不过去（回溯读的是磁盘上的检查点，
+	# 两边都过一趟 JSON 才是同一把尺子）。
+	check(game.roll_back().is_empty() and _json_round_trip(game.snapshot()) == _json_round_trip(identity_checkpoint),
+		"rolling back returns the world to exactly where it was before the write")
+	check(game.person_flag("zhou", "status") != "dead" and int(game.flag("day")) == 1 and game.pending.is_empty()
+			and game.available("testimony") and not game.available("fallback"),
+		"rollback undoes the death, the day and the ink; the routes come back")
 	game.new_game()
+	# 新开一局要清掉上一局的检查点：不然「回溯」会把新世界退到别人的剧情里。
+	check(not game.checkpoint_ready(), "a new game leaves no rollback checkpoint behind")
 	check(game.restore(store.read("black_page_smoke_roundtrip").get("data", {})).is_empty(), "JSON save restores pending write")
 	# 「有没有可续的存档」= **能不能真的续**，不是「文件读不读得出来」：
 	# 内容过不了校验的存档，开始页不该摆出「继续游戏」。
@@ -342,6 +391,37 @@ func _run() -> void:
 	runner.finished.connect(func(): ended[0] += 1, CONNECT_ONE_SHOT)
 	check(runner.play("smoke_loop").contains("上限") and ended[0] == 1 and not runner.busy(),
 		"runaway story stops at the step limit instead of hanging and still reports finished")
+	# 节点必要条件（设计文档 §26）：进节点时条件不成立 = **因果链断了**——
+	# 发 broken 收场、**不补发 finished**（「演完了」和「走不下去了」是两种收场，
+	# 等 finished 的人要往下走，等 broken 的人要拿出路），原因取自节点自己的 broken 文案。
+	game.bundle.stories.smoke_gated = {
+		"name": "契约·必要条件",
+		"start": "gate",
+		"nodes": {"gate": {
+			"requires": [{"flag": "day", "op": ">=", "value": 99}],
+			"broken": "契约·世界线断了",
+			"steps": [],
+		}},
+	}
+	var breaks: Array = []
+	var finishes: Array = []
+	runner.broken.connect(func(reason: String): breaks.append(reason))
+	runner.finished.connect(func(): finishes.append(1))
+	check(runner.play("smoke_gated").is_empty() and breaks == ["契约·世界线断了"]
+			and finishes.is_empty() and not runner.busy() and runner.broken_reason == "契约·世界线断了",
+		"a node whose requirement fails breaks the chain, and broken is not finished")
+	# 条件成立时同一个节点照常跑过去——闸门不是墙。
+	game.bundle.stories.smoke_gated.nodes.gate.requires = []
+	check(runner.play("smoke_gated").is_empty() and breaks.size() == 1 and finishes == [1]
+			and runner.broken_reason.is_empty(),
+		"the same node plays through once its requirement holds")
+	# 收场是「一次 play 一次」：再播一遍时 broken_reason 先清后断，
+	# 上一回的旧原因不会跟着漏进来。
+	game.bundle.stories.smoke_gated.nodes.gate.requires = [{"flag": "day", "op": ">=", "value": 99}]
+	breaks.clear()
+	check(runner.play("smoke_gated").is_empty() and breaks == ["契约·世界线断了"] and finishes == [1],
+		"a later run clears the previous broken_reason before it can break again")
+	game.bundle.stories.erase("smoke_gated")
 	# 演出（sequence 指令）的契约：执行器**停在演出上等**——演出演完（ack）
 	# 才继续后面的步骤。这就是设计文档 §7 那条「剧情可以暂停在一段演出上」。
 	game.bundle.sequences.smoke_play = {"name": "契约·演出", "steps": [{"at": 0.0, "wait": 0.05}]}
@@ -446,6 +526,23 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"effect": {"set": {"no_such_flag": 1}}}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
 		"story effect references are validated")
+	# 节点字段照执行器的 NODE_FIELDS 校验，和指令表一个规矩：未知字段**报错不忽略**——
+	# 把 requires 拼成 require，静默的后果就是闸门永远不响。
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.dance = 1
+	check(not loader._compile_stories(broken) and loader.error.contains("未知字段"),
+		"an unknown story node field has source location")
+	# 闸门断了要说得出为什么（设计文档 §26）：写了 requires 就必须写 broken。
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.requires = [{"flag": "day", "op": ">=", "value": 99}]
+	check(not loader._compile_stories(broken) and loader.error.contains("必须写 broken"),
+		"a gated node must say why the chain would break")
+	# 必要条件本身照常校验：引用没声明过的旗标照样拦住。
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.requires = [{"flag": "no_such_flag", "value": true}]
+	broken.stories.chapter1_open.nodes.morning.broken = "断了"
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
+		"a node requirement is validated against the declared flags")
 	# 演出数据（sequences.json）的校验：动作名 / 素材 / 参数在加载期就报出来，
 	# 剧情引用不存在的演出同样拦住——都不等运行时。
 	broken = compiled.duplicate(true)
@@ -525,6 +622,9 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("user://screenshots")
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_launch.png")
+	# 槽位隔离：这一局的落笔检查点也进 smoke 槽——`new_game()` 会删掉检查点文件，
+	# 忘了换槽位就是「跑一次测试抹掉玩家的存档」。
+	ui.game.checkpoint_slot = "black_page_smoke_checkpoint"
 	ui._start_new_game()
 	await get_tree().create_timer(0.6).timeout
 	check(is_instance_valid(ui.scripted) and not ui._hud_layer.visible, "opening scripted gates investigation hub")
@@ -844,4 +944,54 @@ func _ui() -> void:
 	await get_tree().process_frame
 	check(int(ui.game.flag("day")) == 2 and ui.header.text.contains("第 2 天") and not ui.modal.visible,
 		"confirming turns the page to the next day")
+
+	# ── 断链面板：世界少了必要条件，收场要拿出路（设计文档 §26 / §28）────────
+	# 首章落幕先过 chapter1_end 的闸门：林墨还在，才有人接得住查出来的东西。
+	# 把他写死、夜里兑现，再按「封存黑页」——收场断在闸门上，
+	# 玩家拿到的是断链面板（说明 + 回溯），而不是照常落幕。
+	check(ui.game.unlock_person("linmo").is_empty() and ui.game.write_name("linmo").is_empty(),
+		"the contact goes on the page before the night realizes him")
+	ui._open_notebook()
+	await get_tree().create_timer(0.3).timeout
+	var open_row: Button = _button(ui, "写下「林墨」")
+	check(open_row != null and open_row.disabled and _has_text(open_row, "这个名字已经在黑页上。"),
+		"a pending name cannot be written twice, and the greyed row says exactly why")
+	ui.modal_rows.get_child(ui.modal_rows.get_child_count() - 1).pressed.emit()
+	await get_tree().create_timer(0.9).timeout
+	check(ui.scene_id == "room", "closing the notebook returns to the room")
+	check(ui.game.end_day().is_empty() and ui.game.person_flag("linmo", "status") == "dead",
+		"the night takes the name written on the page")
+	ui._open_notebook()
+	await get_tree().create_timer(0.3).timeout
+	var dead_row: Button = _button(ui, "写下「林墨」")
+	check(dead_row != null and dead_row.disabled and _has_text(dead_row, "这个人已经死了。"),
+		"the dead cannot be written again, and the greyed row says exactly why")
+	var seal: Button = _button(ui, "封存黑页")
+	check(seal != null, "the notebook offers the chapter close once the first night has passed")
+	seal.pressed.emit()
+	await get_tree().process_frame
+	_button(ui, "确认").pressed.emit()
+	await get_tree().process_frame
+	check(ui.modal.visible and _has_text(ui.modal_rows, "林墨不在了。"),
+		"a broken chain shows the panel that says what is missing")
+	var roll: Button = _button(ui, FailureManager.ROLLBACK)
+	check(roll != null, "the checkpoint exists, so the panel offers the way back")
+	check(ui.game.flag("ending") == "" and int(ui.game.flag("day")) == 3,
+		"a broken chain is not an ending, and the world stays where it broke")
+	_button(ui, "先留在这里").pressed.emit()
+	await get_tree().process_frame
+	check(not ui.modal.visible and ui.game.flag("ending") == "" and ui.game.person_flag("linmo", "status") == "dead",
+		"staying moves nothing, so the way back can be entered again")
+	ui._end_chapter("seal")
+	await get_tree().process_frame
+	check(ui.modal.visible and _button(ui, FailureManager.ROLLBACK) != null,
+		"the broken panel can be re-entered")
+	_button(ui, FailureManager.ROLLBACK).pressed.emit()
+	await get_tree().create_timer(1.0).timeout
+	check(ui.game.person_flag("linmo", "status") != "dead" and int(ui.game.flag("day")) == 2
+			and ui.game.pending.is_empty() and ui.scene_id == "room" and not ui.modal.visible,
+		"rolling back returns the world to before the write")
+	ui._end_chapter("seal")
+	await get_tree().process_frame
+	check(ui.game.flag("ending") == "uncertain", "with the chain intact the chapter closes")
 	ui.free()

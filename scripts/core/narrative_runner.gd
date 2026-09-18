@@ -12,11 +12,23 @@ extends RefCounted
 ##              作者写的是「先做什么、再做什么」。
 ##   两者都只管播——状态写入一律过 game 的口子（铁律 1 对谁都成立）。
 signal finished
+## **因果链断了**（设计文档 §26）：剧情走到一个节点，它的必要条件已经不再成立。
+## 发它 = 这段剧情演不下去了，收场。它和 finished 是两种收场，不能合并：
+## 等 finished 的人要「继续往下」，等 broken 的人要「拿出路」——
+## 而且 broken **不补发 finished**，调用方靠 broken_reason 分辨。
+signal broken(reason: String)
 
 ## 执行器认识的指令集合。**data_loader 的校验直接读这张表**——
 ## 加指令只改这里一处：不会出现「数据写了、引擎不认识」的静默丢弃，
 ## 也不会出现「引擎支持、数据校验先拦下来」。
 const COMMANDS := ["say", "effect", "clue", "unlock", "unlockinfo", "if", "goto", "sequence", "minigame"]
+
+## 节点认得的字段。**data_loader 的校验也读这张表**（和 COMMANDS 一个规矩）：
+##   steps    —— 这个节点要做的动作（指令步，一步一条）
+##   requires —— 进入这个节点必须成立的条件；不成立 = 断链
+##   broken   —— 断链时给玩家看的正文（原因）。有 requires 就必须有它：
+##              断链时说不出为什么，玩家只会觉得游戏坏了。
+const NODE_FIELDS := ["steps", "requires", "broken"]
 
 ## 单次 play 最多执行多少步。指令里有 if / goto，数据写错成环就转不出去——
 ## 到顶告警收尾，不把游戏卡死在一次 play 里。
@@ -26,6 +38,9 @@ var story_id := ""
 var node_id := ""
 var index := 0
 var error := ""
+## 这段剧情断在哪儿（空串 = 没断过）。main 靠它分辨「演完了」和「走不下去」——
+## 同步断链时 busy() 是 false，光看忙碌状态会把断链当成演完。
+var broken_reason := ""
 
 ## investigation。**剧情写状态必须经它**——全项目唯一的写口。
 var game: Node
@@ -44,8 +59,10 @@ var _running := false
 
 ## 开播一段剧情。失败返回原因（同时写进 error），成功返回空串。
 ## 数据没加载 / 未知剧情 / 上一段还没演完，都在这里拒绝。
+## 旧账先清：上一次的 error 和断链原因都不许漏进这一段。
 func play(id: String) -> String:
 	error = ""
+	broken_reason = ""
 	if game == null or game.bundle.is_empty(): return _fail("游戏数据还没加载")
 	if _running: return _fail("上一段剧情还没演完")
 	var stories: Dictionary = game.bundle.get("stories", {})
@@ -82,7 +99,16 @@ func _run() -> void:
 			# 编译期校验过节点存在；能到这儿是 F6 热重载把数据换了。
 			_fail("剧情「%s」里没有节点「%s」" % [story_id, node_id])
 			return
-		var steps: Array = nodes[node_id].steps
+		var node: Dictionary = nodes[node_id]
+		# 节点入口的必要条件检查（设计文档 §26）。只在**进入**节点时查一次
+		# （index == 0）：条件在节点内部变化是剧情自己的事，不半路把剧情掐掉。
+		# 空 steps 的节点也要先过这一关——「只是来站一下」的节点正是闸门。
+		if index == 0:
+			var required: Array = node.get("requires", [])
+			if not required.is_empty() and not game.matches(required):
+				_break(str(node.get("broken", "")))
+				return
+		var steps: Array = node.steps
 		if index >= steps.size():
 			# 节点跑完 = 这段剧情结束，不需要显式的 end 指令。
 			_finish()
@@ -184,6 +210,16 @@ func _write(message: String) -> void:
 func _finish() -> void:
 	_running = false
 	finished.emit()
+
+## 断链收场：记下原因、发 broken。**不发 finished**——
+## 「演完了」和「走不下去了」是两种收场，调用方要分开对待
+## （前者继续往下走，后者要拿出路），合并成一个信号就等于把这两种事混作一谈。
+## 原因取自剧情数据里节点自己的 `broken` 文案：为什么断，只有这一段剧情说得清。
+func _break(reason: String) -> void:
+	_running = false
+	broken_reason = reason
+	push_warning("剧情执行器：因果链已断裂——%s" % reason)
+	broken.emit(reason)
 
 ## 失败收场：记下 error；**已经开播的剧情**还要发 finished——
 ## 对调用方（main._play_story / 演出链）来说「演完了」是**收场**，不分正常还是出错，
