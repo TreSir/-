@@ -46,8 +46,7 @@ Godot 4.x / GDScript 的推理视觉小说原型。**打开 `project.godot`，�
 
 | 想改什么 | 文件 |
 | --- | --- |
-| 序章剧本 | `data/black_page/prologue.json` |
-| 剧情段落（说台词 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` |
+| 剧情段落（序章 / 开场白 / 说台词 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` |
 | 重点演出（打点时间轴） | `data/black_page/sequences.json` |
 | 小游戏（场景 + 配置） | `data/black_page/minigames.json` |
 | 调查方向（正文 / 条件 / 奖励） | `data/black_page/actions.json` |

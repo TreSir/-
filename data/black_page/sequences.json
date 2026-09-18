@@ -19,5 +19,72 @@
         "wait": 0.35
       }
     ]
+  },
+  "prologue_music_low": {
+    "name": "若有若无的音乐",
+    "steps": [
+      {
+        "at": 0.0,
+        "bgm": "res://assets/audio/bgm_mysterious.ogg"
+      }
+    ]
+  },
+  "prologue_countdown": {
+    "name": "倒计时开始（滴答，音乐退场）",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_clock_tick1.wav"
+      },
+      {
+        "at": 0.0,
+        "bgm": ""
+      }
+    ]
+  },
+  "prologue_last_minute": {
+    "name": "最后一分钟",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_clock_tick3.wav"
+      }
+    ]
+  },
+  "prologue_phone_buzz": {
+    "name": "手机震动",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_phone_buzz.wav"
+      }
+    ]
+  },
+  "prologue_book_close": {
+    "name": "合上笔记",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_book_close.wav"
+      }
+    ]
+  },
+  "prologue_phone_ring": {
+    "name": "许妍来电",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_phone_ring.wav"
+      }
+    ]
+  },
+  "prologue_phone_drop": {
+    "name": "通话中断",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_impact.wav"
+      }
+    ]
   }
 }

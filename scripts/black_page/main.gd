@@ -10,7 +10,7 @@ extends Control
 ##   · 存档 / 读取 / 重开 / 雨声 / 背景音乐收在最下面的 ☰。
 ##
 ## 兼容性约束（tests/black_page_smoke.gd 依赖，改动前先看这里）：
-##   · 节点名保留：shell / header / notice / modal / modal_rows / launch / scripted / game。
+##   · 节点名保留：shell / header / notice / modal / modal_rows / launch / game。
 ##   · refresh() 后 header.text 必须含「第 N 天」。
 ##   · _confirm 产出 modal_rows：0 标题、1 正文、2 确认按钮、3 返回按钮
 ##     （_ask_write 会直接改 2 和 3 的文字）。
@@ -21,8 +21,7 @@ extends Control
 
 const Investigation = preload("res://scripts/black_page/investigation.gd")
 const Room = preload("res://scripts/black_page/room.gd")
-const Scripted = preload("res://scripts/core/scripted.gd")
-## 指令流剧情的执行器（第一章起）。序章那套是页数组演出，两者分工见 runner 的头注释。
+## 指令流剧情的执行器。序章和第一章都是它播——全项目只有这一种剧情机制。
 const Runner = preload("res://scripts/core/narrative_runner.gd")
 const Launch = preload("res://scripts/black_page/launch.gd")
 const RainAmbience = preload("res://scripts/black_page/rain_ambience.gd")
@@ -39,9 +38,9 @@ const CodexManager = preload("res://scripts/core/codex_manager.gd")
 const FailureManager = preload("res://scripts/core/failure_manager.gd")
 ## 一次性音效播放器（嗡 / 铃声 / 砰 / 翻页……）。和 BGM、雨声各走各的。
 const SfxPlayer = preload("res://scripts/core/sfx_player.gd")
-## 热区建层与 UV 换算的共用组件——序章那套也用它。
+## 热区建层与 UV 换算的共用组件——房间热区由它建层。
 const HotspotLayer = preload("res://scripts/core/hotspot_layer.gd")
-## 逐字显示。序章那套也是同一个组件——打字机全项目只此一份。
+## 逐字显示。全项目只此一份——剧情、调查、提示都走它。
 const Typewriter = preload("res://scripts/core/typewriter.gd")
 const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 const Store = preload("res://scripts/core/save_store.gd")
@@ -74,7 +73,6 @@ var header: Label
 var notice: Label
 var modal: Control
 var modal_rows: VBoxContainer
-var scripted: Scripted
 ## 指令流剧情的执行器。一局一个、反复用；台词怎么演由 display 接到 `_say`。
 var story: Runner
 ## 当前这段剧情的「接着往下走」回调（_play_story 的 done）。
@@ -588,10 +586,6 @@ func record_line(text: String) -> void:
 ## 玩家偏好存在**单独的文件**里，和存档分开——
 ## 重开新档不该把音量、文字速度这些一起清掉。
 const PREFS_NAME := "prefs"
-
-## 数据缺失时的占位页。**调用方持有兜底**，引擎不自带内容——
-## 这是职责边界：引擎只管播，管不了也不该管「没有数据时放什么」。
-const FALLBACK_PAGE := {"id": "blank", "title": "", "body": "", "background": "black"}
 var _prefs_store = Store.new()
 
 ## 读回上次的设置。启动时在 _build() 之前调，这样界面一出来就是对的。
@@ -678,7 +672,7 @@ func _enter_room(note_error: String = "", note_success: String = "") -> void:
 	if not note_error.is_empty() or not note_success.is_empty():
 		_message(note_error, note_success)
 
-## 序章结束后走这里。序章自己已经把该解锁的入口写进状态（人物 / 口袋），
+## 序章结束后走这里。序章的剧情数据已经把该解锁的入口写进状态（人物 / 口袋），
 ## 案件和黑页要玩家在房间里碰实体才出现——所以这里只管进房间，
 ## 再把开场的剧情段落（stories.json 的 chapter1_open）交给执行器播。
 func _reveal_game() -> void:
@@ -817,6 +811,10 @@ func _build_hotspots() -> void:
 	add_child(_hotspot_layer)
 	_scene_layer.resized.connect(_layout_hotspots)
 	_hotspot_layer.resized.connect(_layout_hotspots)
+	# 建层时就按当前场景铺一次。`scene_id` 开局就是房间，而 `_apply_scene` 只在
+	# **真的换场景**时跑（目标等于当前场景会早退）——不在这里铺，房间里会一个热区
+	# 都没有，玩家就永远碰不到显示器和笔记本，「案件」「黑页」永远解锁不了。
+	_sync_hotspots()
 
 ## 按当前场景重建热区。热区表里只有 room，所以其他场景这里自然是空。
 ##
@@ -878,7 +876,12 @@ func _layout_hotspots() -> void:
 ## 这样热区和侧栏永远不会走出两套不同的状态。
 ##
 ## 第一次碰某个实体时顺带把对应侧栏入口点亮——功能跟着探索长出来，不是开局全给。
+##
+## 剧情演出期间背景不接活：序章和开场白都是在房间里演的，热区跟着 HUD 一起露着，
+## 这时候碰实体弹出面板会打断演出（笔记本还会提前解锁）。演出有自己的推进口。
 func _hotspot_pressed(uv: Dictionary) -> void:
+	if is_instance_valid(story) and story.busy():
+		return
 	match str(uv.get("target", "")):
 		"notebook":
 			_unlock_nav("notebook")
@@ -1055,29 +1058,19 @@ func _continue_game() -> void:
 		_reveal_game()
 	_dismiss_launch(in_prologue)
 
+## 序章：**就是一段指令流剧情**（stories.json 的 prologue），和第一章一样经由执行器播。
+## 黑页时刻的声音（雨、滴答、震动、铃声）在 sequences.json 里，由演出导演播。
+##
+## 和别处不同的一点：序章**不收 HUD**——剧情正文就住在底部字幕带（notice）里，
+## 没有它就没地方说话。侧栏条目仍由旗标把关，序章期间全是关的。
 func _show_prologue() -> void:
-	if is_instance_valid(scripted): return
 	_close_menu()
 	_close_modal()
-	_reveal_hud(false)
-	scripted = Scripted.new()
-	scripted.name = "Scripted"
-	# 序章的剧本由 data_loader 统一加载、状态由 investigation 统一写。
-	# 界面只管把这两个依赖递进去，自己不碰数据。
-	# 兜底是**调用方**的责任：数据缺失时给一页占位，保证引擎永远有东西可播。
-	scripted.source = game.bundle.get("prologue", [])
-	if (scripted.source as Array).is_empty():
-		scripted.source = [FALLBACK_PAGE]
-	scripted.game = game
-	# 序章按页声明它要的音乐（「若有若无，然后消失」），播放器由这里递给它。
-	scripted.music = music
-	scripted.sfx = sfx
-	scripted.record = record_line
-	scripted.type_scale = _type_scale()
-	scripted.finished.connect(func():
-		scripted = null
-		_reveal_game())
-	add_child(scripted)
+	_reveal_hud(true)
+	# HUD 一露出来就按当前状态刷一遍：序章期间「进入次日」必须收着
+	# （refresh 里那条判断），不刷的话它会带着建造时的默认值露在顶栏上。
+	refresh()
+	_play_story("prologue", Callable(self, "_reveal_game"))
 
 ## 左侧栏和底部字幕带是同一条命：剧情演出时整条 HUD 一起收起。
 func _reveal_hud(visible_now: bool) -> void:
@@ -1094,7 +1087,9 @@ func refresh() -> void:
 	if game.bundle.is_empty(): return
 	header.text = "第 %d 天" % int(game.flag("day"))
 	# 已经落幕就没有「次日」可进了：入口收起来，别留一个只会报错的按钮。
-	_next_day.visible = str(game.flag("ending")).is_empty()
+	# 序章期间也收着：序章有自己的时间线（10月17日夜里到第二天早上），
+	# 让玩家在剧情中间翻页会把日子推乱。
+	_next_day.visible = str(game.flag("ending")).is_empty() and bool(game.flag("prologue.completed"))
 	_crumb.text = Scenes.name_of(scene_id)
 	_sync_nav()
 	# 房间空闲时把底部的「当前台词」刷新成最新一条。调查途中不动，免得盖掉正文。
@@ -1662,7 +1657,7 @@ func _message(error: String, success: String = "") -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo: return
 	if event.keycode == KEY_ESCAPE:
-		if is_instance_valid(launch) or is_instance_valid(scripted): return
+		if is_instance_valid(launch): return
 		if _menu_layer != null and _menu_layer.visible:
 			_close_menu()
 			get_viewport().set_input_as_handled()
@@ -1677,13 +1672,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
-		if is_instance_valid(launch) or is_instance_valid(scripted) or modal.visible: return
+		if is_instance_valid(launch) or modal.visible: return
 		_advance_story()
 		get_viewport().set_input_as_handled()
 		return
 	if event.keycode == KEY_F6 and OS.is_debug_build():
 		_message(game.reload_data(), "已重载调查数据。")
-		# 序章文本和调查数据一起热重载：先把新数据递进去，再让它重画当前页。
-		if is_instance_valid(scripted):
-			scripted.source = game.bundle.get("prologue", [])
-			scripted.reload_pages()

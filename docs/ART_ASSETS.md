@@ -28,13 +28,13 @@
 **2. 游戏视口** —— 原本是 `1280×800`（16:10）。
 已改成 `1280×720`，窗口也改成 `1280×720`（project.godot 的 viewport / 窗口都是它）。
 
-> 有意思的是：**代码本来就按 16:9 写的**——`launch.gd` / `scripted.gd`
-> 的缩放基准都是 `size.y / 720.0`，`room.gd` 的尺寸是 `720×405`（正好 16:9），
+> 有意思的是：**代码本来就按 16:9 写的**——`launch.gd` 的缩放基准是 `size.y / 720.0`，
+> `room.gd` 的尺寸是 `720×405`（正好 16:9），
 > `main.gd` 一个写死的尺寸都没有。**只有 project.godot 那个 800 是掉队的。**
 > 所以改完 UI 一行都没动，直接通过。
 
 **裁图会移动画面内容**：如果某个热区的 UV 是按旧图算的，必须重算。
-（本次只有序章包裹页那一处：`[0.43, 0.68, 0.14, 0.09]` → `[0.43, 0.700, 0.14, 0.100]`。）
+（曾有一次就出在已退役的序章包裹页上：`[0.43, 0.68, 0.14, 0.09]` → `[0.43, 0.700, 0.14, 0.100]`。）
 
 | 文件 | 原尺寸 | 裁成 |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 | --- | --- | --- | --- |
 | `black_page_launch_v1.png` | 1526×858 | 16:9 | 启动页背景 |
 | `black_page_room_v1.png` | 1672×940 | 16:9 | 主角出租屋·夜（最常看到的场景） |
-| `black_page_room_morning_v1.png` | 1672×940 | 16:9 | 主角出租屋·清晨（序章尾声） |
+| `black_page_room_morning_v1.png` | 1672×940 | 16:9 | 主角出租屋·清晨（**保留素材池**，见下） |
 | `black_page_scene_monitor.png` | 1526×858 | 16:9 | 显示器：查新闻 / 公开档案 |
 | `black_page_scene_archive.png` | 1526×858 | 16:9 | 档案室：查旧身份档案 |
 | `black_page_scene_phone.png` | 1526×858 | 16:9 | 手机：聊天 / 通话 / 打捞语音 |
@@ -106,10 +106,15 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 | `black_page_scene_photo.png` | 1536×864 | 16:9 | 旧合照：查阅晨曦福利院合照 |
 | `black_page_scene_meeting.png` | 1536×864 | 16:9 | 会面地点：赴约听许妍证词 |
 | `black_page_scene_interview.png` | 1536×864 | 16:9 | 问询室：向林墨交代来源 |
-| `black_page_prologue_notebook_v1.png` | 1526×858 | 16:9 | 黑页（序章 + 第一章核对页角共用） |
-| `black_page_prologue_door_v1.png` | 1526×858 | 16:9 | 序章：楼道（暂无页面引用，素材保留） |
-| `black_page_prologue_door_package_v1.png` | 1586×892 | 16:9 | 序章：门口的黑包裹 |
-| `black_page_prologue_package_v1.png` | 1672×940 | 16:9 | 序章：拆开的包裹 |
+| `black_page_prologue_notebook_v1.png` | 1526×858 | 16:9 | 黑页（第一章核对页角） |
+| `black_page_prologue_door_v1.png` | 1526×858 | 16:9 | 序章：楼道（**保留素材池**，见下） |
+| `black_page_prologue_door_package_v1.png` | 1586×892 | 16:9 | 序章：门口的黑包裹（**保留素材池**，见下） |
+| `black_page_prologue_package_v1.png` | 1672×940 | 16:9 | 序章：拆开的包裹（**保留素材池**，见下） |
+
+> **保留素材池**：这四张序章背景画好了，但当前只有 `scenes.gd` 能换背景
+> （指令流不换背景，见 §八），它们暂时没有引用点。**不删**——
+> 删图不可逆，且剧情正文里这些地点还在；等有「按剧情切背景」的需求时再接。
+> 审计的「没被引用的素材」启发式会点到它们，属预期。
 
 ### 立绘（10 张）
 
@@ -204,9 +209,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 3. 按 §三 命名，放进 assets/backgrounds/
 4. 跑导入（不做这步，游戏里读到的还是旧图）：
        godot --headless --path <项目> --import
-5. 接到代码上（二选一）：
-   · 新场景 → scripts/black_page/scenes.gd 加常量 + TABLE 条目 + BY_ACTION 映射
-   · 序章某页 → data/black_page/prologue.json 那页的 "background" 字段
+5. 接到代码上：scripts/black_page/scenes.gd 加常量 + TABLE 条目 +（需要就）BY_ACTION 映射
 6. 验收：
        python tools/audit.py
        godot --headless --path <项目> res://tests/black_page_smoke.tscn   # 期望 PASS (251 checks)
@@ -216,6 +219,8 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 `scenes.gd` 的 `TABLE` 和 `BY_ACTION` 才是真正的接线处。
 （本项目就出过「档案室的图早就画好了、场景表里也有，
 但没有任何一条调查指向它」的情况。）
+**背景只有 `scenes.gd` 这一个出处**：旧架构「序章某一页换背景」的写法已随重构丢弃，
+剧情指令流不负责换背景。
 
 ---
 
@@ -231,7 +236,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 - [ ] 四周 8% 安全边内没有关键信息
 - [ ] 和 `black_page_room_v1.png` 并排看，亮度/饱和度/透视能接上
 - [ ] 已跑 `--import`
-- [ ] 已接进 `scenes.gd` 或 `prologue.json`
+- [ ] 已接进 `scenes.gd`（背景只从这里来）
 - [ ] `tools/audit.py` 退出码 0、冒烟测试 `PASS (251 checks)`
 
 ---
@@ -263,17 +268,26 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 **6 个音效是本项目程序生成的**（无版权问题）；
 时钟滴答来自 OpenGameArt `ticking clock` by bart（CC0）。
 
-### 序章怎么声明声音（数据驱动，别写死在代码里）
+### 剧情里的声音怎么声明（数据驱动，别写死在代码里）
+
+声音写在 `sequences.json` 的演出里，剧情用 `sequence` 指令引用：
 
 ```json
-"music": {"play": "res://assets/audio/bgm_mysterious.ogg", "db": -26.0, "fade": 6.0}
-"music": {"stop": true, "fade": 4.0}
-"sfx":   "res://assets/audio/sfx_clock_tick1.wav"
-"sfx":   ["res://assets/audio/a.wav", "res://assets/audio/b.wav"]
+"prologue_music_low": {
+  "name": "若有若无的音乐",
+  "steps": [ { "at": 0.0, "bgm": "res://assets/audio/bgm_mysterious.ogg" } ]
+}
+```
+```json
+"prologue_phone_ring": {
+  "name": "许妍来电",
+  "steps": [ { "at": 0.0, "sfx": "res://assets/audio/sfx_phone_ring.wav" } ]
+}
 ```
 
-- `music` 是**状态型**（放 / 停，带淡入淡出）；`sfx` 是**事件型**（进这一页响一次）
-- `db` 越低越轻。**「若有若无」就靠它**（序章等待段落用 -26dB）
+- `bgm` 是**状态型**（换曲目 / `""` 淡出停止，淡入淡出由 `bgm_player.gd` 统一管）；
+  `sfx` 是**事件型**（`at` 那一拍响一次）
+- **音量不写在数据里**——电平由播放器与 `audio_tracks.gd` 的曲目清单管
 - **缺素材会安静跳过**——不刷警告，也不阻断剧情
 
 ### 加一个音效的流程
@@ -282,7 +296,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 1. 素材放进 assets/audio/，文件名 sfx_<用途>.wav（小写 + 下划线）
 2. 在 audio_tracks.gd 里登记常量（★ 唯一的曲目清单）
 3. 跑导入：godot --headless --path <项目> --import
-4. 接到数据上：prologue.json 那一页的 "sfx" 字段（或代码里 sfx.play(常量)）
+4. 接到数据上：sequences.json 里加一条 sfx 动作（或代码里 sfx.play(常量)）
 5. 验收：python tools/audit.py && 冒烟测试 PASS (251 checks)
 ```
 

@@ -69,8 +69,8 @@ def is_game_file(p: Path) -> bool:
 def strip_comments(txt: str, suffix: str) -> str:
     """GDScript 的行注释去掉再参与匹配。
 
-    **注释不是引用。** 反例：prologue.gd 的注释里写着「不再自己 FileAccess +
-    JSON.parse_string」，说明它**没有**读文件；不剥注释的话这条会被当成违规，
+    **注释不是引用。** 反例：main.gd 关于「表现层不读数据文件」的注释里写着
+    `data_loader`，那只是在说规矩，不是在读文件；不剥注释的话这条会被当成违规，
     而且「某个名字只在注释里出现过」也会把死代码藏起来。
     """
     if suffix != ".gd":

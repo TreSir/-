@@ -195,14 +195,6 @@ static func dialogue_scrim() -> TextureRect:
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return node
 
-## 把对话框对回固定位置：底边贴屏幕，高度恒为 height。
-## 换文案之后调用一次即可（内容贴底，所以不需要重新量高度）。
-static func layout_dialogue(box: Control, height: float = DIALOG_H) -> void:
-	if box == null or not box.is_inside_tree():
-		return
-	box.offset_bottom = 0
-	box.offset_top = -height
-
 ## 给内容右边留一段空白：内容 + 一个按 tail 比例伸缩的占位，排成一行。
 ## 这样正文只占 (1 / (1 + tail)) 的宽度，避免整屏宽的长行。
 static func narrow(node: Control, tail: float = 0.62) -> HBoxContainer:

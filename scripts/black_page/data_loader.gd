@@ -20,7 +20,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 	sources.clear()
 	error = ""
 	var result: Dictionary = {"id": "black_page", "catalog": {"items": {}}}
-	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "prologue", "sequences", "stories", "minigames"]:
+	for name in ["flags", "people", "clues", "actions", "cases", "events", "endings", "codex", "transitions", "sequences", "stories", "minigames"]:
 		var source = Source.new()
 		source.read_file(directory.path_join(name + ".json"))
 		sources[name] = source
@@ -31,9 +31,6 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 			_fail(name, "", "文件根类型错误")
 			return {}
 		result[name] = source.data
-	# 序章也走这条管线：规范成统一的页数组，字段写错在这里就报出来，
-	# 而不是等到运行时「这一页什么都不显示」。
-	result.prologue = _compile_prologue(result.prologue)
 	if not error.is_empty():
 		return {}
 	for id in result.flags:
@@ -185,81 +182,6 @@ func _rules(group: String, pointer: String, row: Dictionary, bundle: Dictionary)
 	message = Rules.effects_error(row.get("effects", {}), bundle.flags, bundle.catalog)
 	if not message.is_empty(): return _fail(group, pointer + "/effects", message)
 	return true
-
-## 序章页的字段表：**一行一个字段，值就是这个字段的默认值**。
-##
-## 校验（认不认识这个名字）和拷贝（取出来、给默认值、做转换）**都从这一张表读**。
-##
-## 为什么要这样：以前这两件事写在**两个地方**（白名单 + out.append），
-## 加字段时必须同时改两处——**只改一处就会静默丢数据**：
-## `music` / `sfx` 就这么丢过一次（校验过了、数据没了、音效一个都不响，而测试全绿）。
-##
-## ★ 以后加字段：**只在这里加一行**，校验和拷贝自动跟上。
-const PROLOGUE_FIELDS := {
-	"id": "",
-	"title": "",
-	"body": "",
-	"action": "",
-	"background": "",
-	"visual": {},
-	"choices": [],
-	"hotspots": [],
-	"set": {},
-	"music": {},
-	"sfx": "",
-	"speed": 0.0,
-}
-const PROLOGUE_VISUALS := ["notebook", "profile", "article", "title"]
-
-## 按字段表取一个值。查不到就用表里的默认值，并按默认值的类型做一次转换。
-##
-## 转换规则只有三条，按默认值的类型分派，够用且不用给每个字段写代码：
-##   字典 / 数组 → 深拷贝（页面之间不能共享同一份，改一页会连带改到别人）
-##   浮点        → float()
-##   其余        → str()
-func _field_of(page: Dictionary, key: String) -> Variant:
-	var fallback: Variant = PROLOGUE_FIELDS[key]
-	var value: Variant = page.get(key, fallback)
-	if fallback is Dictionary:
-		return (value as Dictionary).duplicate(true) if value is Dictionary else {}
-	if fallback is Array:
-		return (value as Array).duplicate(true) if value is Array else []
-	if fallback is float:
-		return float(value)
-	return str(value)
-
-## 把 `prologue.json` 规范化成 bundle.prologue（页数组）。
-## 序章因此和 actions / cases 一样吃同一套校验与 F6 热重载。
-func _compile_prologue(raw: Variant) -> Array:
-	var out: Array = []
-	if not (raw is Dictionary) or not ((raw as Dictionary).get("pages") is Array):
-		_fail("prologue", "", "缺少 pages 数组")
-		return out
-	var pages: Array = (raw as Dictionary).pages
-	for index in pages.size():
-		var entry: Variant = pages[index]
-		if not (entry is Dictionary):
-			_fail("prologue", "/pages/" + str(index), "这一页不是对象")
-			return []
-		var page: Dictionary = entry
-		for key in page:
-			# `#` 开头的键当注释用（JSON 不支持注释），不算未知字段。
-			if str(key).begins_with("#"): continue
-			if not PROLOGUE_FIELDS.has(str(key)):
-				push_warning("prologue.json /pages/%d 有未知字段「%s」，会被忽略" % [index, key])
-		var visual: Variant = page.get("visual", {})
-		var kind := str((visual as Dictionary).get("type", "")) if visual is Dictionary else ""
-		if not kind.is_empty() and not kind in PROLOGUE_VISUALS:
-			push_warning("prologue.json /pages/%d 的 visual.type「%s」不认得，可用：%s"
-				% [index, kind, ", ".join(PROLOGUE_VISUALS)])
-		# ★ 拷贝也走同一张表：加字段只改上面的表，这里不用动。
-		var compiled: Dictionary = {}
-		for key in PROLOGUE_FIELDS:
-			compiled[key] = _field_of(page, str(key))
-		out.append(compiled)
-	if out.is_empty():
-		_fail("prologue", "", "没有任何有效页")
-	return out
 
 ## 演出数据（sequences.json）的校验：时间轴形状 + 动作参数。
 ##

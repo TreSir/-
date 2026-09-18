@@ -10,6 +10,8 @@ const Rules = preload("res://scripts/core/rules.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 ## 断链的收场文案：断链面板上该出现哪几个字，断言读的就是这一份。
 const FailureManager = preload("res://scripts/core/failure_manager.gd")
+## 房间热区表：界面按它建热区，断言也按它数——同一个数只能有一个出处。
+const Hotspots = preload("res://scripts/black_page/hotspots.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
 var checks := 0
 var failures := 0
@@ -34,13 +36,6 @@ func check(value: bool, message: String) -> void:
 ##
 ## in_local_coords 必须传 true：默认 false 时事件坐标按【窗口】坐标解释，
 ## 会被 stretch 变换（1152x720 → 1280x800）再换算一次，导致命中位置整体偏移。
-## 造一个「左键按下」事件，用来直接喂给 gui_input，测热区能不能点。
-func _left_click() -> InputEventMouseButton:
-	var event := InputEventMouseButton.new()
-	event.button_index = MOUSE_BUTTON_LEFT
-	event.pressed = true
-	return event
-
 func _click_at(ui: Node, position: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
@@ -490,33 +485,28 @@ func _run() -> void:
 
 	var loader = Loader.new()
 	var compiled: Dictionary = loader.compile()
-	# ★ 字段表驱动的**结构性断言**：表里声明的每个字段，都必须真的出现在编译结果里。
-	# 守的是「校验」和「拷贝」读同一张表这个性质本身——以前这两件事写在两个地方，
-	# 只改一处就会静默丢数据（music / sfx 丢过一次：音效一个都不响，而测试全绿）。
-	var not_copied: Array = []
-	for key in Loader.PROLOGUE_FIELDS:
-		if not (compiled.prologue[0] as Dictionary).has(str(key)):
-			not_copied.append(str(key))
-	check(not_copied.is_empty(), "every declared scripted field reaches the page (%s)" % str(not_copied))
-	# 回归：loader 必须把 music / sfx **真的拷进**页面。
-	# 只有字段白名单是不够的 —— 不拷就等于数据被静默丢弃：
-	# 音乐和音效一个都不会响，而测试依然全绿。
-	var prologue_pages: Array = compiled.prologue
-	var with_music := 0
-	var with_sfx := 0
-	for pg in prologue_pages:
-		if not (pg.get("music", {}) as Dictionary).is_empty(): with_music += 1
-		if not str(pg.get("sfx", "")).is_empty(): with_sfx += 1
-	check(with_music >= 2 and with_sfx >= 6,
-		"compiled scripted carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
-	# 背景只有一条路：数据写什么就是什么（res:// 路径 / "black"）。
-	# 没写就是空串，引擎（core/scripted.gd）按纯黑画——旧别名链（bg → door / note）已随旧架构移除。
-	var bare_pages: Array = loader._compile_prologue(
-		{"pages": [{"id": "bare"}, {"id": "direct", "background": "res://assets/backgrounds/black_page_room_v1.png"}]})
-	check(bare_pages.size() == 2
-			and str(bare_pages[0].background).is_empty()
-			and str(bare_pages[1].background) == "res://assets/backgrounds/black_page_room_v1.png",
-		"background compiles verbatim: a bare page stays empty, explicit paths pass through")
+	# 序章现在是**一段指令流剧情**（stories.json 的 prologue），和第一章同一条路：
+	# 说几句 → 写状态 → 跳一段。这里量的是「它真的进了数据、内容是全的」。
+	check(not compiled.has("prologue") and compiled.stories.has("prologue"),
+		"the prologue no longer compiles into a page array — it is a story")
+	var prologue: Dictionary = compiled.stories.prologue
+	check(prologue.start == "night" and prologue.nodes.size() == 5,
+		"the prologue is a five-node story that starts at its first scene")
+	var say_lines := 0
+	var settled := false
+	for node_id in prologue.nodes:
+		for step in prologue.nodes[node_id].steps:
+			if step.has("say"): say_lines += (step.say as Array).size()
+			if step.has("effect") and bool(step.effect.get("set", {}).get("prologue.completed", false)):
+				settled = true
+	check(say_lines >= 100, "the prologue carries its full text through say steps (%d lines)" % say_lines)
+	# 黑页时刻的声音全在 sequences.json 里（策划案 §九：开场只有雨声，音乐是后加的、还要消失）。
+	var prologue_steps := 0
+	for id in compiled.sequences:
+		if str(id).begins_with("prologue_"): prologue_steps += (compiled.sequences[id].steps as Array).size()
+	check(prologue_steps >= 7, "the prologue's audio cues live in sequences.json (%d steps)" % prologue_steps)
+	# 序章结尾的账：这些旗标是它交给第一章的交接物，一条都不能少。
+	check(settled, "the prologue settles its chapter flags through a data effect")
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")
@@ -634,115 +624,74 @@ func _ui() -> void:
 	# 忘了换槽位就是「跑一次测试抹掉玩家的存档」。
 	ui.game.checkpoint_slot = "black_page_smoke_checkpoint"
 	ui._start_new_game()
+	# 序章是一段普通剧情（stories.json 的 prologue），开场经由执行器播出来。
+	# 两段式推进：第一下把打字补完、**不翻句**，第二下才走——这是序章手感的关键。
+	# 两步之间不能有 await：只要跑过一帧，打字机可能自己打完，第一下就没测到。
+	var first_beat: String = ui._typer.full_text()
+	check(not first_beat.is_empty(), "the prologue speaks before the first frame")
+	ui._advance_story()
+	check(ui._typer.full_text() == first_beat and not ui._is_typing(),
+		"first tap completes the typing instead of advancing")
+	ui._advance_story()
+	check(ui._typer.full_text() != first_beat, "the second tap moves the story on")
 	await get_tree().create_timer(0.6).timeout
-	check(is_instance_valid(ui.scripted) and not ui._hud_layer.visible, "opening scripted gates investigation hub")
+	check(ui._hud_layer.visible and ui.story.busy() and ui.story.story_id == "prologue",
+		"the prologue plays through the narrative runner with the hud up")
+	# 序章有自己的时间线（10月17日夜里到第二天早上）：剧情中间不给「进入次日」，
+	# 否则玩家能把日子推乱——顶栏别的都在，就这一个入口收着。
+	check(not ui._next_day.visible, "the day only turns after the prologue has settled")
 	# HUD 的成员**必须都挂在 _hud_layer 下**：显隐是一刀切的（只切这一个节点），
-	# 挂在别处就不会跟着收——顶栏以前就是这么在序章里一直露着日期的。
+	# 挂在别处就不会跟着收——顶栏以前就是这么在剧情里一直露着日期的。
 	# 这条断言守的是**结构**，不是某个节点的 visible 值。
 	check(ui.shell.get_parent() == ui._hud_layer
 			and ui._topbar.get_parent() == ui._hud_layer
 			and ui._rail.get_parent() == ui._hud_layer,
 		"every hud member lives under the hud layer")
-	# 序章的音乐是「若有若无，然后消失」：页面声明要求，播放器由 main 注入。
-	# 音频在 headless 下听不到，但「有没有递进去」能验。
-	check(is_instance_valid(ui.scripted.music), "prologue gets the music player injected")
-	check(is_instance_valid(ui.scripted.sfx), "prologue gets the sfx player injected")
-	# 页级 speed：配了就用它，没配走全局 TYPE_SPEED。
-	# 新剧本里 index=14（wait_2332）配了 speed 34。
-	ui.scripted.step = 14
-	ui.scripted._render_page()
-	check(ui.scripted._speed == 34.0, "page speed overrides the global typing speed")
-	ui.scripted.step = 0
-	ui.scripted._render_page()
-	check(ui.scripted._speed == UI.TYPE_SPEED, "page without speed falls back to the global")
-	# 黑页视觉卡的字号来自数据（第 7 页 rules_page 18、第 8 页 existing_name 25），
-	# 要真的落到字体上——漏拷进 meta 的话每页会一齐退回 20，静默丢数据。
-	ui.scripted.step = 7
-	ui.scripted._render_page()
-	var small_font: int = (ui.scripted._visual_layer.get_child(0) as Label).get_theme_font_size("font_size")
-	ui.scripted.step = 8
-	ui.scripted._render_page()
-	var large_font: int = (ui.scripted._visual_layer.get_child(0) as Label).get_theme_font_size("font_size")
-	check(small_font > 0 and large_font > small_font,
-		"notebook visuals keep their data-authored font sizes (%d < %d)" % [small_font, large_font])
-	ui.scripted.step = 0
-	ui.scripted._render_page()
-	# 演出组件要真的建出来：index=1 是出租屋那一页，挂了 5 个热点
-	ui.scripted.step = 1
-	ui.scripted._render_page()
-	check(ui.scripted._hotspot_layer.get_child_count() == 5, "hotspot page builds its hotspots")
-	# 真点一下热区：正文要换成那条 response。
-	# 这是玩家的真实操作路径——只数子节点个数证明不了点得动。
-	ui.scripted._hotspot_layer.get_child(0).gui_input.emit(_left_click())
-	await get_tree().process_frame
-	check(ui.scripted._typer.full_text().contains("显示器"),
-		"clicking a hotspot plays its response text")
-	# 真点一下推进：第一下只把打字补完、**不翻页**（两段式），这是序章手感的关键
-	ui.scripted._render_page()
-	ui.scripted._tap()
-	check(not ui.scripted._is_typing(), "first tap completes the typing instead of advancing")
-	# index=3 是许妍那页，挂了 3 个回复选项
-	ui.scripted.step = 3
-	ui.scripted._render_page()
-	check(ui.scripted._choice_layer.get_child_count() == 3, "choice page builds its options")
-	# 真点一下选项：要把它自己那条 set 写进去
-	ui.scripted._choice_layer.get_child(0).pressed.emit()
-	await get_tree().process_frame
-	check(str(ui.game.flag("prologue.reply")) == "have_time",
-		"picking a choice writes its own flag")
-	# 文字速度档位是**倍率**，不是绝对值：序章页面里配的 speed 是演出意图
-	# （越接近 23:47 打得越慢），那属于内容，不能被玩家的偏好抹掉。
-	ui.scripted.type_scale = 2.0
-	check(is_equal_approx(ui.scripted._speed_of({"speed": 21.0}), 42.0),
-		"player type scale multiplies the authored page speed")
-	ui.scripted.type_scale = ui._type_scale()
-	ui.scripted.step = 0
-	ui.scripted._render_page()
-	# 自动模式要在按钮上看得出来，不然玩家不知道自己处在什么状态
-	ui.scripted._auto = true
-	ui.scripted._refresh_auto()
-	check(ui.scripted._auto_link.text == "自动中", "auto mode marks itself on the button")
-	ui.scripted._auto = false
-	ui.scripted._refresh_auto()
-	check(ui.scripted._auto_link.text == "自动", "auto mode reverts the button label")
-	# 截图模式：序章几种演出各拍一张，方便肉眼验收
-	# （房间热点 / 聊天卡 / 纸页写字 / 新闻卡 / 标题卡）。
-	# 每张等一小会儿让打字机推进，拍到的才是真实画面。
-	if "--capture-render" in OS.get_cmdline_user_args():
-		DirAccess.make_dir_recursive_absolute("user://screenshots")
-		for shot in [[1, "prologue_room"], [3, "prologue_chat"], [7, "prologue_rules"],
-				[10, "prologue_article"], [25, "prologue_title"]]:
-			ui.scripted.step = shot[0]
-			ui.scripted._render_page()
-			await get_tree().create_timer(0.9).timeout
-			await RenderingServer.frame_post_draw
-			get_viewport().get_texture().get_image().save_png(
-				"user://screenshots/black_page_%s.png" % shot[1])
-		ui.scripted.step = 0
-		ui.scripted._render_page()
-	# 把整段序章走完：32 页，逐页推进到序章自己被释放。
-	# `_advance()` 是「无条件翻页」，和玩家点击走的 `_tap()` 不是一层。
+	# 序章的声音（雨 → 滴答 → 震动 → 铃声）全在 sequences.json 里，由演出导演播。
+	# headless 下听不到声音，但「播放器有没有递到导演、演员是不是真的」能验。
+	check(is_instance_valid(ui.director.music) and is_instance_valid(ui.director.sfx)
+			and ui.story.performer.is_valid(),
+		"the prologue's cues go through the performance director")
+	# 文字速度档位是**倍率**，不是绝对值：基准速度 × 玩家的偏好，两者都要。
+	# 玩家的档位不该被这一句的演出意图抹掉，数据也不该无视玩家的设置。
+	check(is_equal_approx(ui._beat_speed, UI.TYPE_SPEED * ui._type_scale()),
+		"the beat speed is the base speed times the player's scale")
+
+	# 把整段序章走完：一句一句推进，直到它自己交出控制权。
+	# 走的**就是玩家点击走的那条路**（两段式：先补完打字、再翻句）——
+	# 测试不该另开一条更宽松的推进口，否则「点不动」这类问题照样漏。
+	# 每轮两下：第一下补完当前句的打字，第二下翻过去。
 	var prologue_guard := 0
-	while is_instance_valid(ui.scripted) and prologue_guard < 40:
-		ui.scripted._advance()
+	while ui.story.busy() and ui.story.story_id == "prologue" and prologue_guard < 600:
+		ui._advance_story()
+		ui._advance_story()
 		await get_tree().process_frame
 		prologue_guard += 1
-	check(prologue_guard >= 32, "every scripted page was walked (%d)" % prologue_guard)
+		# 截图模式：走在中途拍一张，方便肉眼验收（黑页时刻的字都在底部字幕带里）。
+		if "--capture-render" in OS.get_cmdline_user_args() and prologue_guard == 40:
+			await get_tree().create_timer(0.4).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_prologue.png")
+	check(prologue_guard >= 50, "every prologue beat was walked (%d rounds)" % prologue_guard)
 	# 剧情回顾：序章的正文必须被记下来——玩家点快了要能翻回去看。
 	# 记在 main 而不是序章自己：回顾要收全（序章 + 第一章），只能有一个地方收。
-	check((ui._history as Array).size() >= 32, "prologue text lands in the review history")
+	check((ui._history as Array).size() >= 100, "prologue text lands in the review history")
+	# 日志同理：序章的每一句都要经由 game 的口子落进去，结算 / 回顾才拿得到全文。
+	check(ui.game.journal.size() >= 100, "prologue text lands in the journal")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.1).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_chapter.png")
 	await get_tree().create_timer(1.6).timeout
-	check(not is_instance_valid(ui.scripted) and ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
+	check(ui.shell.visible and ui.game.flag("prologue.completed"), "prologue completes and hands over to the hub")
 	# 开场白现在是**数据剧情**（stories.json 的 chapter1_open）：经由执行器播出来，
 	# 正文落进日志，「已播过」写进旗标——以前这段字硬编码在 investigation.new_game() 里。
 	check(ui.game.flag("story.chapter1_open.done"), "the opening story marks itself done through the game facade")
 	check(is_instance_valid(ui.story) and ui.story.story_id == "chapter1_open", "the opener goes through the narrative runner")
-	check(not ui.game.journal.is_empty() and str(ui.game.journal[0]).contains("天亮了"),
-		"opening text comes from stories.json and lands in the journal")
+	var found_opening := false
+	for line in ui.game.journal:
+		if str(line).contains("天亮了"): found_opening = true
+	check(found_opening, "opening text comes from stories.json and lands in the journal")
 	# 读完这一句（第一下补完打字、第二下翻过它），再重播一次：
 	# 已经播过的剧情**不再重播**，闸门是剧情数据自己的 if，不是界面里的特判。
 	ui._advance_story()
@@ -795,13 +744,25 @@ func _ui() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_menu.png")
 	ui._close_menu()
-	# 左侧栏不是开局全给的：序章最后一页只解锁「人物」和「口袋」，
+	# 左侧栏不是开局全给的：序章的结算效果只解锁「人物」和「口袋」，
 	# 「案件」要碰房间里的显示器、「黑页」要碰桌上那本笔记。
 	# 这类问题来自「全屏容器默认 MOUSE_FILTER_STOP 盖在上面吃点击」，
 	# 直接调方法测不出来，必须模拟真实鼠标点击。
 	await get_tree().process_frame
-	check(ui.nav_buttons["people"].visible and ui.nav_buttons["pocket"].visible, "people and pocket unlock from scripted data")
+	check(ui.nav_buttons["people"].visible and ui.nav_buttons["pocket"].visible, "people and pocket unlock from the prologue's data")
 	check(not ui.nav_buttons["case"].visible and not ui.nav_buttons["notebook"].visible, "case and notebook stay hidden until touched")
+	# 房间热区：背景上的可点区域要**真的点得动**——用真实点击事件走一遍命中测试。
+	# 数子节点个数证明不了这个：热区可能被哪层全屏容器盖住，形状也可能没排出来。
+	check(ui._hotspot_layer.get_child_count() == Hotspots.for_scene("room").size(),
+		"the room builds one hotspot per table entry")
+	var phone_box := ui._hotspot_layer.get_node_or_null("phone") as Control
+	check(phone_box != null and phone_box.size.x > 0.0, "the phone hotspot is laid out over the background")
+	_click_at(ui, phone_box.get_global_rect().get_center())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(ui.modal.visible and ui._open_panel == "pocket", "clicking the phone hotspot opens the pocket")
+	ui._close_modal()
+	await get_tree().process_frame
 	await get_tree().create_timer(0.6).timeout
 
 	_click_at(ui, ui.nav_buttons["people"].get_global_rect().get_center())
@@ -904,6 +865,11 @@ func _ui() -> void:
 	# 锁（game.active_action）不释放，玩家就卡在「不能开始新调查、不能存档、
 	# 不能重载数据」的死角里，只有重新开始能出去。四条退出路径各验一次。
 	ui.game.new_game()
+	# 重开的世界离「序章已演完」还差一步——真实流程里这面旗是序章最后那步
+	# effect 写的。这里走同一条数据通道补上，界面才处在正常的房间态：
+	# 「进入次日」的闸门就是它，缺了它按不动，后面整段都验不了。
+	check(ui.game.apply_effects({"set": {"prologue.completed": true}}).is_empty(),
+		"the fresh world is marked past the prologue through a data effect")
 	check(ui.game.begin_action("camera").is_empty(), "begin an investigation for the ESC check")
 	ui._open_minigame("camera")
 	await get_tree().process_frame

@@ -15,9 +15,6 @@ signal track_changed(path: String)
 
 var muted_by_player := false
 var current_path := ""
-## 当前曲目的目标音量。默认 PLAY_DB；
-## 「若有若无」那种段落可以传更低的值（序章等待段落就是这么用的）。
-var _track_db := PLAY_DB
 
 var _aux: AudioStreamPlayer
 var _active: AudioStreamPlayer
@@ -36,11 +33,10 @@ func _ready() -> void:
 
 
 ## 切到指定曲目。同一首正在播则忽略，避免重复起播。
-func play_track(path: String, fade: float = XFADE, db: float = PLAY_DB) -> void:
+func play_track(path: String, fade: float = XFADE) -> void:
 	if path.is_empty():
 		return
 	if path == current_path and _active.playing:
-		_track_db = db
 		return
 	# 同雨声：素材缺失时安静跳过，不要每次启动刷警告。
 	if not ResourceLoader.exists(path):
@@ -58,7 +54,6 @@ func play_track(path: String, fade: float = XFADE, db: float = PLAY_DB) -> void:
 	incoming.volume_db = SILENT_DB
 	incoming.play()
 	current_path = path
-	_track_db = db
 
 	_start_fade()
 	_fade.tween_property(incoming, "volume_db", _level(), fade)
@@ -102,4 +97,4 @@ func _start_fade() -> void:
 
 
 func _level() -> float:
-	return SILENT_DB if muted_by_player else _track_db
+	return SILENT_DB if muted_by_player else PLAY_DB

@@ -152,7 +152,7 @@
 > `inventory_changed` / `unlock_requested` / `story_reloaded` / `custom_event`），已删。
 > 状态变化实际都靠 `investigation.changed` 驱动界面刷新——**加信号前先找到监听方**。
 
-### `scripts/core/` —— 与内容无关的机制（15 个）
+### `scripts/core/` —— 与内容无关的机制（14 个）
 
 | 文件 | 职责 |
 | --- | --- |
@@ -166,16 +166,12 @@
 | `minigame_result.gd` | **小游戏结果的词表与形状**（`{type, score, data}` + `passed()`）。小游戏、数据校验、结算闸门都读这一份 |
 | `case_manager.gd` | **案件状态机**（`locked → active → completed`）：`active_case` 查询 + 单一活动案件的不变量检查。词表 `STATES` 与 `data_loader` 共用 |
 | `codex_manager.gd` | **图鉴的读模型与解锁校验**：`unlock_error` / `rows`（这个人现在看得见的档案）/ `touched`（这次状态变化翻开了谁的页）。解锁时机由剧情数据决定，这里只回答「看得见什么」 |
-| `scripted.gd` | **页数组剧本引擎**（系统级，不专属任何章节）。逐页推进，支持四种演出卡片；吃任意「页数组」 |
-| `narrative_runner.gd` | **指令流剧情执行器**（系统级）。`say` / `effect` / `clue` / `unlock` / `unlockinfo` / `if` / `goto` / `sequence` / `minigame`；表现、演出、小游戏回调都由调用方注入 |
-| `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。主界面与剧本引擎共用 |
+| `narrative_runner.gd` | **指令流剧情执行器**（系统级，全项目唯一的一套剧情机制）。`say` / `effect` / `clue` / `unlock` / `unlockinfo` / `if` / `goto` / `sequence` / `minigame`；表现、演出、小游戏回调都由调用方注入。序章与开场白都只是一段普通的剧情数据 |
+| `typewriter.gd` | 打字机：文字 + 速度 → 「此刻该显示到第几个字」。宿主每帧喂 `tick(delta)` |
 | `hotspot_layer.gd` | UV 热区层：UV 比例 → 屏幕矩形（含封面式拉伸的换算）。装饰差异走可选回调 |
 | `sfx_player.gd` | 音效播放器：事件型，一次播放一个音 |
 
-> `scripted.gd` 的剧本从**调用方注入**（序章由 `main.gd` 注入 `bundle.prologue`），
-> 写状态走 `game.apply_state()`——引擎本身不认识「序章」这个词。
->
-> `narrative_runner.gd` 同理：剧情从 `game.bundle.stories` 读，台词怎么演由注入的
+> `narrative_runner.gd` 的剧情从 `game.bundle.stories` 读，台词怎么演由注入的
 > `display` 回调决定，状态写入走 `game.apply_effects()` / `add_clue()` / `apply_state()`；
 > `sequence` 指令交给注入的 `performer` 回调（`performance_director.gd` 的 `play`），
 > `minigame` 指令交给注入的 `play_minigame` 回调（`minigame_manager.gd`），
@@ -199,8 +195,8 @@
 | `core/json_source.gd` JSON + 行号 | `ui_style.gd` 颜色字号（这是黑页的视觉语言） |
 | `core/save_store.gd` 存档读写 | `scenes.gd` 场景表 |
 | `core/save_manager.gd` 存档打包与校验 | `hotspots.gd` 的热区表 |
-| `core/typewriter.gd` 逐字显示 | `main.gd` / `scripted.gd` 的演出 |
-| `core/hotspot_layer.gd` UV 热区层 | `stories.json` 里的剧情段落（黑页的故事） |
+| `core/typewriter.gd` 逐字显示 | `main.gd` 的叙述流 |
+| `core/hotspot_layer.gd` UV 热区层 | `main.gd` 的房间热区装饰与触发（`hotspots.gd` 的表） |
 | `core/narrative_runner.gd` 指令流执行器 | — |
 | `core/minigame.gd` / `core/minigame_result.gd` 小游戏契约与结果 | — |
 | `services/game_state.gd` 强类型状态 | — |
@@ -214,8 +210,8 @@
 
 | 组件 | 原来重复在哪 |
 | --- | --- |
-| `core/typewriter.gd` | `main.gd` 与 `scripted.gd` 各写一套逐字显示，连「先补完再翻页」都重复 |
-| `core/hotspot_layer.gd` | 序章与房间各写一套 UV 热区，**连换算都重复了一份** |
+| `core/typewriter.gd` | 主界面曾与页数组剧本引擎（已退役）各写一套逐字显示，连「先补完再翻页」都重复 |
+| `core/hotspot_layer.gd` | 房间热区与（已退役的）序章页各写一套 UV 热区，**连换算都重复了一份** |
 
 **③ 只有一个使用者，而且看得到未来也不会有第二个？**
 
@@ -226,7 +222,7 @@
 1. **参数比使用者还多**
 2. **为了照顾 A，B 得传一堆用不上的东西** → 正确做法是把 A 的装饰做成**可选回调**，
    排除在公共路径之外（`core/hotspot_layer.gd` 的 `decorate` 就是这么处理的：
-   房间要悬停辉光与调试标签，序章不需要，所以它不在公共参数里）。
+   房间要悬停辉光与调试标签，别处不需要，所以它不在公共参数里）。
 3. **改一处要动三个文件**
 
 ### 提取出来放哪
@@ -249,8 +245,7 @@ data/black_page/*.json
    bundle（内存字典）
       │
       ├──▶ investigation.gd    （读 bundle 判断与结算）
-      ├──▶ core/scripted.gd    （页数组剧本引擎；序章由 main 注入 bundle.prologue 后开演）
-      ├──▶ core/narrative_runner.gd （指令流剧情；main 注入 game 与表现回调后开播）
+      ├──▶ core/narrative_runner.gd （指令流剧情：序章、开场白、断链结语都是它播的）
       │       ├─▶ performance_director.gd （sequence 指令交给它演；演完回调，剧情继续）
       │       └─▶ minigame_manager.gd     （minigame 指令交给它跑；打完写状态、回调放行）
       └──▶ main.gd             （读 bundle 画界面）
@@ -347,8 +342,7 @@ ui.<key>                       ← 侧栏入口是否点亮
 | `endings.json` | 结局。**必须有且仅有一个无条件兜底，且优先级最低** |
 | `codex.json` | 人物图鉴的档案条目（`fields`: `{id, title, text}`）。解锁**不写在这里**——存在 `person.<id>.info.<field>` 旗标里，由剧情/线索数据写入（见七.4） |
 | `transitions.json` | 转场（`cut` / `fade` / `slide`；优先级 **单条行动 > 目标场景 > 全局默认**） |
-| `prologue.json` | 序章剧本（页数组：背景 / 卡片 / 热区 / 选项） |
-| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出 / 小游戏） |
+| `stories.json` | 指令流剧情（节点 + 指令步：说台词 / 写状态 / 给线索 / 条件跳转 / 重点演出 / 小游戏）。**序章（`prologue`）与开场白（`chapter1_open`）也在这一份里**——它们不是特殊格式，只是普通的剧情数据 |
 | `sequences.json` | 重点演出的时间轴（`at` 打点 + 一条动作：音效 / 音乐 / 淡入淡出 / 震动 / 闪白 / 等待） |
 | `minigames.json` | 小游戏（场景路径 + 开局参数）。动作与剧情都只引用 id——同一局小游戏能被两处复用 |
 
@@ -489,86 +483,68 @@ write_name → 守卫过了 → 把「现在的世界」写进检查点 → 才�
 
 ---
 
-## 八、剧情演出的组件与引擎分工
+## 八、剧情演出：一套指令流 + 重点演出
 
-序章不走「行动」那套，用一套**声明式演出**（`prologue.json` 的每页字段）：
+**全项目只有一套剧情机制**：`core/narrative_runner.gd` 的指令流。序章、开场白、
+断链结语都是 `stories.json` 里的普通剧情数据——没有「序章专用格式」，也没有
+只属于某一章的引擎（页数组引擎 `core/scripted.gd` 与 `data/black_page/prologue.json`
+已随架构重构退役，序章正文整份搬进 `stories.json` 的 `prologue` 段）。
 
-| 字段 | 含义 |
-| --- | --- |
-| `id` | 页标识（写数据时自己认页用） |
-| `title` | 页眉（时间戳一类） |
-| `body` | 正文；换行分段（一段一次点击），`<br>` 段内换行 |
-| `action` | 底部提示条的动作字（如「查看包裹 ▸」） |
-| `background` | `res://` 路径 / `"black"` 纯黑（不写 = 空串 = 纯黑） |
-| `visual` | 演出卡片：`notebook`（纸页写字）/ `profile`（手机聊天卡）/ `article`（新闻卡）/ `title`（独立成屏） |
-| `choices` | 轻量分支，点选写入自己的 `set` 并把 `response` 播出来 |
-| `hotspots` | 第一人称热区，`rect` 是 **UV 比例** `[x,y,w,h]`，点击把 `response` 播成正文 |
-| `set` | **进入这一页时**写入状态 |
-| `music` | 状态型音乐：`{play, db, fade}` 放 / `{stop, fade}` 停 |
-| `sfx` | 事件型音效：进这一页响一次（路径 / 路径数组） |
-| `speed` | 页级打字速度（不写就用全局 `UI.TYPE_SPEED`） |
+```json
+"prologue": {
+  "name": "序章",
+  "start": "night",
+  "nodes": {
+    "night": { "steps": [ {"say": ["你把门在身后关上，潮湿的城市被隔在外面。", "屋子里没有开灯，雨声反而更清楚了。"]},
+                          {"sequence": "prologue_music_low"},
+                          {"effect": {"set": {"prologue.xu_is_ex": true}}} ] }
+  }
+}
+```
 
-**字段白名单在 `data_loader.gd` 的 `PROLOGUE_FIELDS`**，`visual.type` 只认上面四种。
-写错会 `push_warning`——不再是静默失败。
+正文怎么写、指令有哪些，见本节后半「指令流剧情（stories.json）的写法」；
+演员表（音效 / 音乐 / 闪白 / 震动）见「重点演出（sequences.json + 演出导演）」。
 
-正文分段规则：**换行 = 分成一段（一次点击）**；`<br>` = 段内换行（不额外点击）。
+> **旧架构里只有页数组表达得了的东西已全部丢弃**：逐页背景与页面卡片
+> （`notebook` / `profile` / `article` / `title`）、页内热区、页内轻量选择。
+> 正文一字不落保留（换行 = 一次点击、`<br>` = 段内换行的规则原样搬到 `say`
+> 数组的每个元素上，手感不变）；那几页原来驱动它们的状态写入改由 `effect` 步表达。
+> 新格式支持的演出（音效 / 音乐 / 淡入淡出 / 震动 / 闪白 / 等待）在
+> `sequences.json` 里，由 `sequence` 指令接入。
 
 ### ⚠️ 剧情文案与演出指示必须分开
 
 策划案（`black_page_design.md`）是**给你我看的工作文档**，里面混着三类东西。
-往 `prologue.json` 里写的时候必须分清，**分类错了玩家就会读到制作备注**。
+往 `stories.json` 的 `say` 里写的时候必须分清，**分类错了玩家就会读到制作备注**。
 
 | 类别 | 例子 | 写进哪 |
 | --- | --- | --- |
-| **剧情文案** | 「你把门在身后关上，潮湿的城市被隔在外面。」 | `body` / `title` / `action` / `choices[]` / `visual.text` ✓ |
-| **演出指示** | 「黑屏」「先听见雨声」「几秒以后，钥匙插入门锁」「画面慢慢亮起」 | **引擎字段**：`background` / `music` / `speed` / `visual`。**不能进 `body`** ✗ |
+| **剧情文案** | 「你把门在身后关上，潮湿的城市被隔在外面。」 | `say` 的字符串 ✓ |
+| **演出指示** | 「黑屏」「先听见雨声」「几秒以后，钥匙插入门锁」「画面慢慢亮起」 | **指令步里的引擎字段**：`sequence` / `effect`。**不能进 `say`** ✗ |
 | **系统说明** | 「玩家可以点击：电脑、手机、窗户、桌面、床」 | 不写进游戏，那是制作备注 |
 
 **判断方法：这句是「主角能感知到的东西」，还是「要引擎做什么」？**
 
 | 原句 | 判定 | 理由 |
 | --- | --- | --- |
-| 雨声反而更清楚了 | ✓ 进 `body` | 主角的感知 |
+| 雨声反而更清楚了 | ✓ 进 `say` | 主角的感知 |
 | 先听见雨声。很轻，没有音乐。 | ✗ 不进 | 这是在要求引擎「放雨声、别放音乐」 |
-| 房间里原本若有若无的音乐已经停了 | ✓ 进 `body` | 主角注意到的**变化**，有戏剧作用 |
+| 房间里原本若有若无的音乐已经停了 | ✓ 进 `say` | 主角注意到的**变化**，有戏剧作用 |
 | 没有音乐。 | ✗ 不进 | 单纯的**状态说明**，玩家不需要被告知 |
 
-**还有一条：`body` 里不能写游戏里没发生的事。**
+**还有一条：`say` 里不能写游戏里没发生的事。**
 
-策划案写「雨声停止」，但雨声播放器当时并不受序章控制——
+策划案写「雨声停止」，但雨声播放器当时并不受剧情控制——
 把它写进正文，就是让主角感知到一件没发生的事。
 **要么把它实现出来，要么别写。**
 （这条是实际踩过的：`next_you_write` 原来有「画面陷入黑暗，雨声也在同一刻停了」，
 而当时雨声根本没停。）
 
----
-
-### 三个叙事引擎怎么选（职责边界）
-
-项目里有三个"念文字"的东西，**场景切换不是它们的区别**——
-转场是 main 的转场系统，哪边都触发（调查切场景、剧本每页换背景）。
-
-| | `_say` 叙述流（main 内） | `core/scripted.gd` 页数组 | `core/narrative_runner.gd` 指令流 |
-| --- | --- | --- | --- |
-| 场景/背景 | **一次**（进调查时切过去） | **每页都可以不一样** | 不碰背景（在房间上念） |
-| 玩家能做的事 | 没有——纯读 | **有**——点热区、做选择 | 没有——走向由指令自己定 |
-| 内容粒度 | 句子（只有文字 + 说话人） | 页（文字+素材+交互+音乐+状态写入） | 指令步（说 / 写状态 / 给线索 / 条件跳转） |
-| 作者写的形状 | — | 一页一页的画面 | 先做什么、再做什么 |
-| 读完之后 | **绑定结算**（提交调查、回房间） | 发 `finished`，去哪由调用方定 | 发 `finished`，去哪由调用方定 |
-| 数据 | — | `prologue.json` | `stories.json` |
-
-**选择规则（一句话）**：
-
-> 这一段里玩家需要「做事」（点东西、做选择、每页换素材）吗？
-> **要 → Scripted。不要、但它是「按顺序发生的一串事」（说几句 → 写状态 → 跳一段）
-> → Runner。都不要（纯读、读完要结算）→ `_say`。**
-
-注意：Scripted 里的**普通页**（没配热区/卡片/选项）看起来就和 `_say` 一样——
-分段、逐字、自动、跳过、速度全部对齐，玩家两边手感一致 ✓ 这是**有意的**。
-Runner 的 `say` 走的也是 main 的同一条叙述流，手感同样一致。
-
-零件全部共享：打字机、热区层、回顾记录、UI 工厂、音乐音效接口 ✓
-**零件共享，引擎分工**——不要为了"少一个引擎"把它们合并（会造出参数怪兽）。
+**为什么不再留第二个「念文字」的引擎**：`_say` 叙述流（main 内）、页数组、
+指令流三者并存时，同一个动作（推进一句、补完打字、记一条回顾）有三处实现，
+每加一种演出就要在三处各想一遍「这段归谁演」。合并成一条之后——
+**谁要念字都走指令流，指令流不认识界面**：台词怎么演由注入的 `display` 回调决定，
+演出交给导演、小游戏交给经理，零件（打字机、热区层、回顾记录、UI 工厂）全部共享。
 
 ### 指令流剧情（stories.json）的写法
 
@@ -824,8 +800,7 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 
 | 要加什么 | 动哪里 | 机器守着 |
 | --- | --- | --- |
-| 序章一页 / 一段剧情 | `data/black_page/prologue.json` | ✓ 测试走完 32 页会崩 |
-| 一段指令流剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
+| 一段剧情（说 / 写状态 / 给线索 / 跳转） | `data/black_page/stories.json` + 需要的新旗标写进 `flags.json` | ✓ 指令与引用在编译期校验 |
 | 一道剧情闸门（进这个节点要有某条件，断了说什么） | `stories.json` 节点的 `requires` + `broken` | ✓ 有 `requires` 必须写 `broken`、未知节点字段都在编译期报错 |
 | 一段重点演出（时间轴打点） | `data/black_page/sequences.json` + 在 `stories.json` 里用 `sequence` 指令引用 | ✓ 动作名与素材引用在编译期校验 |
 | 一个小游戏 | `data/black_page/minigames.json`（场景 + 配置）· 在调查行动或剧情指令里引用 · 需要的旗标写进 `flags.json` | ✓ 场景存在与结果声明在编译期校验 |
@@ -840,14 +815,12 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 
 | 要加什么 | 动哪里 | 处数 | 机器守着 |
 | --- | --- | --- | --- |
-| **序章页的一个字段** | `data_loader.gd` 的 **`PROLOGUE_FIELDS` 表**（值=默认值） | **1 处** | ✓ **结构性断言**：表里每个字段都必须出现在编译结果里 |
 | **一种剧情指令** | `core/narrative_runner.gd` 的 **`COMMANDS` 表 + `_run` 的 match** | **1 处**（校验读同一张表） | ✓ 未知指令在编译期报错 |
 | **一种演出动作** | `performance_director.gd` 的 **`ACTIONS` 表 + `_act` 的 match** | **1 处**（校验读同一张表） | ✓ 未知动作在编译期报错 |
 | **一种小游戏结果类型** | `core/minigame_result.gd` 的 **`TYPES` 表 + `normalize` 的 match** | **1 处**（校验读同一张表） | ✓ 数据里的未知结果类型在编译期报错 |
 | **一种案件状态** | `core/case_manager.gd` 的 **`STATES` 表**（+ `main.gd` 的状态显示字） | 2 处 | ✓ 数据 `values` 少一档在编译期报错；✗ 显示字靠人 |
 | **死亡笔记的规矩**（什么能写 / 怎么写对 / 写错留什么） | `core/death_note_system.gd` 一处；界面上的提示走 `game.write_error()` | **1 处** | ✓ 冒烟测试守着守卫、兑现与回溯 |
 | **剧情节点的字段**（如再加一个和 `requires` 同级的） | `core/narrative_runner.gd` 的 **`NODE_FIELDS` 表 + `_run` 里的读法** | **1 处**（校验读同一张表） | ✓ 未知节点字段在编译期报错 |
-| 一种 `visual` 类型 | `PROLOGUE_VISUALS` 数组 + `core/scripted.gd` 的 `_render_visual` | 2 处 | ✗ 靠人（未知类型只告警） |
 | 一个场景 | `scenes.gd` 的 `TABLE` +（需要就）`BY_ACTION` | 1~2 处 | ✗ 靠人 |
 | 一个侧栏/菜单面板 | `main.gd` 的 `_open_xxx()` + 菜单或侧栏加一行 | 2 处 | ✗ 靠人 |
 | 一个数据文件（新组） | `data/` 建 JSON + `data_loader` 加载列表 +（需要就）校验 | 2~3 处 | ✓ 对账 data 文件与 loader 列表 |
@@ -857,15 +830,16 @@ Godot 的 `.godot/imported/` 有缓存，**替换磁盘上的 PNG 之后游戏�
 ### 三条设计约束（加东西之前先想）
 
 1. **能不能只改数据？** —— 能就别碰代码（见 §０ 第二问）
-2. **同一件事会不会写在两个地方？** —— 会的话先改成一张表（见 §四 的 `PROLOGUE_FIELDS`）
+2. **同一件事会不会写在两个地方？** —— 会的话先改成一张表（见 §八 的 `COMMANDS` 表：校验和执行读的是同一张）
 3. **加完之后，测试能发现漏改吗？** —— 不能的话，想想能不能加一条断言
 
 ### 反面教材（真实事故）
 
-`music` / `sfx` 两个字段曾经**加进白名单却没加进拷贝**：
-校验通过、数据丢失、音乐音效一个都不响，**而 86 项测试全绿**。
-修完之后加了「表里每个字段都必须出现在编译结果里」这条断言——
-**守的是「校验和拷贝读同一张表」这个性质本身**，而不是某个字段是否存在。
+旧架构的序章页曾出过一次事故：`music` / `sfx` 两个字段**加进了校验白名单却没加进拷贝**——
+校验通过、数据丢失、音乐音效一个都不响，**而当时 86 项测试全绿**。
+（那套页数组引擎连同这两张表已随重构一起删除；事故是历史，教训不是。）
+教训：**校验和执行必须读同一张表**——加字段只改一处，另一处跟着走，
+否则就会重演「数据写了、引擎不认识」。
 
 同一课后来用在剧情指令上：`data_loader` 校验指令名时**直接读执行器的 `COMMANDS` 表**，
 不自己抄一份——抄一份就会重演「数据写了、引擎不认识」。
