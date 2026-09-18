@@ -228,9 +228,9 @@ func _run() -> void:
 	# ── 小游戏结果的标准形状（§10）──────────────────────────────────────
 	# 词表和形状只有 core/minigame_result.gd 一份：小游戏、数据校验、
 	# 结算闸门都读它——三处各写一份的话，改一个词就会有一处静默不认。
-	var normalized: Dictionary = MiniGameResult.normalize({"success": true})
-	check(normalized.type == "success" and normalized.score == 100 and normalized.data is Dictionary,
-		"legacy {success} results normalize into the standard shape")
+	var normalized: Dictionary = MiniGameResult.normalize({"type": "partial", "score": 60, "data": {"segments": 3}})
+	check(normalized.type == "partial" and normalized.score == 60 and (normalized.data as Dictionary).get("segments") == 3,
+		"a standard-shape result keeps its score and payload")
 	normalized = MiniGameResult.normalize({"type": "还没有这个词", "score": 250})
 	check(normalized.type == "failed" and normalized.score == 100,
 		"an unknown result type falls back to failed and the score is clamped")
@@ -509,14 +509,14 @@ func _run() -> void:
 		if not str(pg.get("sfx", "")).is_empty(): with_sfx += 1
 	check(with_music >= 2 and with_sfx >= 6,
 		"compiled scripted carries music and sfx (%d music, %d sfx)" % [with_music, with_sfx])
-	# 回归：旧写法 bg 的兜底链要真的走得到。background 的默认值以前是 "door"，
-	# 兜底条件永不为真——只写 bg 的页会静默拿到 door 背景（别名根本没翻译）。
-	var legacy_pages: Array = loader._compile_prologue(
-		{"pages": [{"id": "legacy", "bg": "note"}, {"id": "bare"}]})
-	check(legacy_pages.size() == 2
-			and str(legacy_pages[0].background).ends_with("black_page_prologue_notebook_v1.png")
-			and str(legacy_pages[1].background).ends_with("black_page_prologue_door_v1.png"),
-		"the legacy bg fallback chain still translates aliases (bg → note, neither → door)")
+	# 背景只有一条路：数据写什么就是什么（res:// 路径 / "black"）。
+	# 没写就是空串，引擎（core/scripted.gd）按纯黑画——旧别名链（bg → door / note）已随旧架构移除。
+	var bare_pages: Array = loader._compile_prologue(
+		{"pages": [{"id": "bare"}, {"id": "direct", "background": "res://assets/backgrounds/black_page_room_v1.png"}]})
+	check(bare_pages.size() == 2
+			and str(bare_pages[0].background).is_empty()
+			and str(bare_pages[1].background) == "res://assets/backgrounds/black_page_room_v1.png",
+		"background compiles verbatim: a bare page stays empty, explicit paths pass through")
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
 	bad.effects = {"set": {"linmo_trsut": 30}}
 	check(not loader._validate_row("actions", "badge", bad, compiled) and loader.error.contains("actions.json:") and loader.error.contains("linmo_trsut"), "reference error has source location")

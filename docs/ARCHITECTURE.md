@@ -289,6 +289,7 @@ data/black_page/*.json
 
 | 方法 | 用途 | 说明 |
 | --- | --- | --- |
+| `open()` | 编译数据 + 配好 `GameState` + 开一局新世界 | 主界面 `_ready` 启动时调一次；出错返回原因（启动页会把它显示出来） |
 | `new_game()` / `load_game()` / `save_game()` | 开局 / 读档 / 存档 | — |
 | `begin_action(id)` / `cancel_action()` | 开始 / 取消行动 | 二者都会 `ticket += 1` |
 | `complete_action(token)` | 结算行动 | **必须带发起时的 token**；小游戏类行动读 `minigame.<id>.type` 判通过；失败也要放行动锁（见七.3） |
@@ -494,11 +495,17 @@ write_name → 守卫过了 → 把「现在的世界」写进检查点 → 才�
 
 | 字段 | 含义 |
 | --- | --- |
-| `background` | `res://` 路径 / `"black"` 纯黑 |
+| `id` | 页标识（写数据时自己认页用） |
+| `title` | 页眉（时间戳一类） |
+| `body` | 正文；换行分段（一段一次点击），`<br>` 段内换行 |
+| `action` | 底部提示条的动作字（如「查看包裹 ▸」） |
+| `background` | `res://` 路径 / `"black"` 纯黑（不写 = 空串 = 纯黑） |
 | `visual` | 演出卡片：`notebook`（纸页写字）/ `profile`（手机聊天卡）/ `article`（新闻卡）/ `title`（独立成屏） |
-| `hotspots` | 第一人称热区，`rect` 是 **UV 比例** `[x,y,w,h]`，点击把 `response` 播成正文 |
 | `choices` | 轻量分支，点选写入自己的 `set` 并把 `response` 播出来 |
+| `hotspots` | 第一人称热区，`rect` 是 **UV 比例** `[x,y,w,h]`，点击把 `response` 播成正文 |
 | `set` | **进入这一页时**写入状态 |
+| `music` | 状态型音乐：`{play, db, fade}` 放 / `{stop, fade}` 停 |
+| `sfx` | 事件型音效：进这一页响一次（路径 / 路径数组） |
 | `speed` | 页级打字速度（不写就用全局 `UI.TYPE_SPEED`） |
 
 **字段白名单在 `data_loader.gd` 的 `PROLOGUE_FIELDS`**，`visual.type` 只认上面四种。

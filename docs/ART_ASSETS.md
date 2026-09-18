@@ -25,24 +25,26 @@
 **1. 图的比例** —— 原本 7 张 16:10、6 张 16:9 混着。
 已全部裁成 16:9（从中间取，上下对称；主体偏上的从底部多裁）。
 
-**2. 游戏视口** —— 原本是 （16:10）。
-已改成 ****，窗口也改成 。
+**2. 游戏视口** —— 原本是 `1280×800`（16:10）。
+已改成 `1280×720`，窗口也改成 `1280×720`（project.godot 的 viewport / 窗口都是它）。
 
-> 有意思的是：**代码本来就按 16:9 写的**—— /  的缩放基准
-> 都是 ， 的尺寸是 （正好 16:9），
->  一个写死的尺寸都没有。**只有  那个 800 是掉队的。**
+> 有意思的是：**代码本来就按 16:9 写的**——`launch.gd` / `scripted.gd`
+> 的缩放基准都是 `size.y / 720.0`，`room.gd` 的尺寸是 `720×405`（正好 16:9），
+> `main.gd` 一个写死的尺寸都没有。**只有 project.godot 那个 800 是掉队的。**
 > 所以改完 UI 一行都没动，直接通过。
 
 **裁图会移动画面内容**：如果某个热区的 UV 是按旧图算的，必须重算。
-（本次只有序章包裹页那一处： → 。）
---- | --- | --- |
-| `black_page_launch_v1.png` | 1526×954 | 裁成 1526×858 |
-| `black_page_prologue_door_package_v1.png` | 1586×992 | 裁成 1586×892 |
-| `black_page_prologue_door_v1.png` | 1526×954 | 裁成 1526×858 |
-| `black_page_prologue_notebook_v1.png` | 1526×954 | 裁成 1526×858 |
-| `black_page_scene_archive.png` | 1526×954 | 裁成 1526×858 |
-| `black_page_scene_monitor.png` | 1526×954 | 裁成 1526×858 |
-| `black_page_scene_phone.png` | 1526×954 | 裁成 1526×858 |
+（本次只有序章包裹页那一处：`[0.43, 0.68, 0.14, 0.09]` → `[0.43, 0.700, 0.14, 0.100]`。）
+
+| 文件 | 原尺寸 | 裁成 |
+| --- | --- | --- |
+| `black_page_launch_v1.png` | 1526×954 | 1526×858 |
+| `black_page_prologue_door_package_v1.png` | 1586×992 | 1586×892 |
+| `black_page_prologue_door_v1.png` | 1526×954 | 1526×858 |
+| `black_page_prologue_notebook_v1.png` | 1526×954 | 1526×858 |
+| `black_page_scene_archive.png` | 1526×954 | 1526×858 |
+| `black_page_scene_monitor.png` | 1526×954 | 1526×858 |
+| `black_page_scene_phone.png` | 1526×954 | 1526×858 |
 
 **裁切方向**：从**中间**取，保上下对称；如果主体偏上（如笔记本、手机），从底部多裁一点。
 裁完必须跑 `--import`，否则游戏里读到的还是旧图。
@@ -105,7 +107,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 | `black_page_scene_meeting.png` | 1536×864 | 16:9 | 会面地点：赴约听许妍证词 |
 | `black_page_scene_interview.png` | 1536×864 | 16:9 | 问询室：向林墨交代来源 |
 | `black_page_prologue_notebook_v1.png` | 1526×858 | 16:9 | 黑页（序章 + 第一章核对页角共用） |
-| `black_page_prologue_door_v1.png` | 1526×858 | 16:9 | 序章：楼道 |
+| `black_page_prologue_door_v1.png` | 1526×858 | 16:9 | 序章：楼道（暂无页面引用，素材保留） |
 | `black_page_prologue_door_package_v1.png` | 1586×892 | 16:9 | 序章：门口的黑包裹 |
 | `black_page_prologue_package_v1.png` | 1672×940 | 16:9 | 序章：拆开的包裹 |
 
@@ -125,10 +127,10 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 
 ## 五、缺口清单
 
-### 🔴 必须做
+### ✅ 已完成（2026-09-16）
 
-1. **比例统一** —— 8 张 16:10 裁成 16:9（见 §一）
-2. **视口决议** —— 保持 1280×800 还是改 1280×720（见 §一）
+1. **比例统一** —— 背景图全部裁成 16:9（见 §一）
+2. **视口决议** —— viewport / 窗口统一改成 1280×720（16:9）（见 §一）
 
 ### 🟡 做了明显更好
 
@@ -153,7 +155,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 写要求时遵守三条（这三条决定了图和游戏能不能合上）：
 
 - **留安全边**：四周 8% 不要放关键信息——上下会被裁（COVERED），
-  左右也会被裁（16:9 视口 + 16:10 窗口时）
+  窗口比例偏离 16:9 时左右也会被裁
 - **不出现可读文字**：AI 生成的中文字都是糊的，别让它成为信息载体
 - **第一人称视角**：画面是「主角此刻看到的东西」，不是第三人称构图
 
@@ -254,7 +256,7 @@ im.crop((0, 0, w, round(w * 9 / 16))).save(dst, "PNG")   # 从顶部取
 | 类别 | 文件 |
 | --- | --- |
 | BGM ×6 | `bgm_contemplation` / `empty_city` / `mysterious` / `mysterious_calm` / `dungeon` / `noir_piano` |
-| 雨声 ×4 | `rain_steady`（默认）/ `light` / `heavy` / `thunder` |
+| 雨声 ×4 | `rain_thunder`（当前默认）/ `rain_steady` / `light` / `heavy` |
 | 音效 ×10 | `sfx_phone_buzz` 手机震动 · `sfx_phone_ring` 来电 · `sfx_impact` 砰 · `sfx_page_turn` 翻页 · `sfx_book_close` 合上书 · `sfx_ui_click` 点击 · `sfx_clock_tick1~4` 时钟滴答 |
 
 **来源与许可**：BGM / 雨声来自 OpenGameArt 的 CC0 / CC-BY（见 `assets/audio/CREDITS.md`）；

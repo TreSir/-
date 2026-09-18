@@ -17,18 +17,13 @@ static func passed(type: String) -> bool:
 
 ## 把一个小游戏交回来的东西规范成标准形状。
 ##
-## 兼容旧写法 `{success: bool}`——那是本项目的第一个小游戏（timeline）最早用的形状；
-## 场景是外挂内容，作者写出旧形状不该变成「打完了、结果丢了」。
-## 认不出的类型一律记 failed：宁可当没打成，也不能让一个拼错的名字冒充成功。
+## 只认标准形状 `{type, score, data?}`：没写 type、或拼错的名字，一律记 failed——
+## 宁可当没打成，也不能让一个拼错的名字冒充成功。
 static func normalize(raw: Variant) -> Dictionary:
 	var source: Dictionary = raw if raw is Dictionary else {}
 	var type := str(source.get("type", ""))
 	var raw_score: Variant = source.get("score", 0)
 	var score: int = int(raw_score) if raw_score is float or raw_score is int else 0
-	if type.is_empty() and source.has("success"):
-		var ok: bool = source.success == true
-		type = "success" if ok else "failed"
-		score = 100 if ok else 0
 	if not type in TYPES: type = "failed"
 	var data: Variant = source.get("data", {})
 	return {"type": type, "score": clampi(score, 0, 100), "data": data if data is Dictionary else {}}

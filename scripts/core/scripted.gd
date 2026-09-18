@@ -437,8 +437,8 @@ func _play_page_sfx(spec: Variant) -> void:
 
 ## 背景：`"black"` 是纯黑（开场与标题卡），其余按 res:// 路径加载。
 ##
-## 进来的 value 只会是 res:// 路径或 "black"——剧本私有别名（door / note）
-## 在 loader 规范化时已经翻译掉了（见 data_loader 的 BACKDROP_ALIASES）。
+## 进来的 value 只会是 res:// 路径、"black" 或空串——数据在 loader 里原样编译，
+## 引擎不认识任何内容侧的别名；空串按纯黑画（页面没写背景就是黑屏）。
 func _apply_backdrop(value: String) -> void:
 	var path := value
 	# "black" 必须**画成黑的**。只把贴图置空的话这一层是透明的，
