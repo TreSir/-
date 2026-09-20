@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://dxfkj5g2flvty"
-path="res://.godot/imported/onryou.ttf-f70a8df3d980b61b5fdb0260c9ca34cc.fontdata"
+uid="uid://dtvxnl330hkip"
+path="res://.godot/imported/longcang.ttf-c22ccca8cc1f69601543e33a99887ed3.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/onryou.ttf"
-dest_files=["res://.godot/imported/onryou.ttf-f70a8df3d980b61b5fdb0260c9ca34cc.fontdata"]
+source_file="res://assets/fonts/longcang.ttf"
+dest_files=["res://.godot/imported/longcang.ttf-c22ccca8cc1f69601543e33a99887ed3.fontdata"]
 
 [params]
 

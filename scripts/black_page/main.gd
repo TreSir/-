@@ -477,6 +477,8 @@ func _render_menu_rows() -> void:
 	_menu_panel.add_child(UI.rule(0.6))
 	_add_toggle_row("文字速度：%s" % TYPE_LABELS[_type_scale_index], _cycle_type_scale)
 	_menu_panel.add_child(UI.rule(0.6))
+	_add_toggle_row("字号：%s" % UI.TEXT_SCALE_LABELS[UI.text_scale_index], _cycle_text_scale)
+	_menu_panel.add_child(UI.rule(0.6))
 	_add_toggle_row("全屏：%s" % ("开" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "关"), _toggle_fullscreen)
 	if OS.is_debug_build():
 		_menu_panel.add_child(UI.rule(0.6))
@@ -596,6 +598,9 @@ func _load_prefs() -> void:
 	music_muted = bool(prefs.get("music", music_muted))
 	sfx_muted = bool(prefs.get("sfx", sfx_muted))
 	_type_scale_index = clampi(int(prefs.get("type_scale", _type_scale_index)), 0, TYPE_SCALES.size() - 1)
+	# 字号档位存在 UI 的静态变量上：正文由 UI.flow() 建，那里按它算字号，
+	# 所以必须在 _build() 之前读回来，界面一出来才是对的。
+	UI.text_scale_index = clampi(int(prefs.get("text_scale", UI.text_scale_index)), 0, UI.TEXT_SCALES.size() - 1)
 
 ## 改完设置就存。**设置不记住等于没做**——下次启动又回到默认，玩家要重调一遍。
 func _save_prefs() -> void:
@@ -604,12 +609,20 @@ func _save_prefs() -> void:
 		"music": music_muted,
 		"sfx": sfx_muted,
 		"type_scale": _type_scale_index,
+		"text_scale": UI.text_scale_index,
 	})
 
 ## 循环切换文字速度档位。
 func _cycle_type_scale() -> void:
 	_type_scale_index = (_type_scale_index + 1) % TYPE_SCALES.size()
 	_save_prefs()
+
+## 循环切换正文字号档位。存完立刻重算树上的正文——
+## 玩家要当场看到变化，不该等下一屏。
+func _cycle_text_scale() -> void:
+	UI.text_scale_index = (UI.text_scale_index + 1) % UI.TEXT_SCALES.size()
+	_save_prefs()
+	UI.rescale_prose(self)
 
 ## 当前档位的倍率。夹一下索引，坏数据不该让整段叙述变成静止。
 func _type_scale() -> float:

@@ -1,3 +1,7 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# 备选字体：只在本地对比用，11 MB 不入库（见 assets/fonts/README.md）
+assets/fonts/noto_serif_sc.otf
+assets/fonts/noto_serif_sc.otf.import

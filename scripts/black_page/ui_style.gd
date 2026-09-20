@@ -44,6 +44,35 @@ const SIZE_UI := 15
 const SIZE_SMALL := 13
 const SIZE_MICRO := 11
 
+# ── 正文字号档位（玩家可调）─────────────────────────────────────────────
+## **倍率**，不是绝对字号：正文基准仍由上面那几档定，玩家只乘一个系数。
+## 加档位只改这两张表——界面、存档、重算全都读它们。
+const TEXT_SCALES := [0.85, 1.0, 1.15, 1.3]
+const TEXT_SCALE_LABELS := ["小", "标准", "大", "特大"]
+
+## 当前档位索引。**只有走 flow() 的正文吃它**（对话框 / 回顾 / 调查正文 / 面板说明）；
+## 标题、标签、按钮住在定高的条里，放大就会被裁，所以不参与。
+## 静态变量：正文是谁建的都要按同一档位算，不能各拿一份。
+static var text_scale_index := 1
+
+## 只有 flow() 建节点时用：记下基准号，换档位时按它重算。
+const BASE_SIZE_META := "ui_base_font_size"
+
+static func text_scale() -> float:
+	return float(TEXT_SCALES[clampi(text_scale_index, 0, TEXT_SCALES.size() - 1)])
+
+## 正文实际字号 = 基准 × 档位。
+static func scaled(size: int) -> int:
+	return int(round(size * text_scale()))
+
+## 换完档位，把**已经建好**的正文重算一遍。
+## 按建时记下的基准号重算，不拿当前字号再乘一次——那样连着调两档会滚雪球。
+static func rescale_prose(root: Node) -> void:
+	for child in root.get_children():
+		if child is Label and child.has_meta(BASE_SIZE_META):
+			child.add_theme_font_size_override("font_size", scaled(int(child.get_meta(BASE_SIZE_META))))
+		rescale_prose(child)
+
 # ── 布局（逻辑像素，1280×720 基准）──────────────────────────────────────
 const TOPBAR_H := 58
 const RAIL_W := 84
@@ -68,13 +97,13 @@ const TRANSITION_OUT := 0.26
 const TRANSITION_IN := 0.42
 
 # ── 字体 ────────────────────────────────────────────────────────────────
-## 剧情正文字体：随游戏分发的「怨霊」（暗黒工房 v2.0，assets/fonts/onryou.ttf）。
+## 剧情正文字体：随游戏分发的「有字库龙藏体」（SIL OFL，assets/fonts/longcang.ttf）。
 ## 只给剧情正文用（对话框 / 回顾），界面控件保持系统字体。
 ##
-## 它是日文字体，只收 JIS 第一/第二水準——正文里约五分之一的简体字
-## （东 / 门 / 页 / 说 …）不在字集里，缺字挂到 sans() 的系统链上兜底，
-## 不会出豆腐块。授权与获取方式见 assets/fonts/README.md。
-const STORY_FONT := preload("res://assets/fonts/onryou.ttf")
+## 它覆盖正文全部用字（游戏数据里 615 个非 ASCII 字符一个不缺），所以不会出现
+## 「一句话里混两种字面」。挂 sans() 系统链只是保险：以后文案添了生僻字时兜底。
+## 授权与备选字体见 assets/fonts/README.md。
+const STORY_FONT := preload("res://assets/fonts/longcang.ttf")
 
 ## 系统无衬线链：界面字体，也是 STORY_FONT 的兜底层。
 static func sans() -> SystemFont:
@@ -168,9 +197,11 @@ static func label(text: String, size: int = SIZE_UI, color: Color = TEXT) -> Lab
 	node.add_theme_color_override("font_color", color)
 	return node
 
-## 长正文专用：自动换行 + 占满可用宽度。
+## 长正文专用：自动换行 + 占满可用宽度。**字号档位只作用在这一类节点上**，
+## 所以基准号要记进 meta，玩家中途调档位时才能按基准重算而不是二次放大。
 static func flow(text: String, size: int = SIZE_UI, color: Color = TEXT) -> Label:
-	var node := label(text, size, color)
+	var node := label(text, scaled(size), color)
+	node.set_meta(BASE_SIZE_META, size)
 	node.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return node

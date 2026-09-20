@@ -2,4 +2,4 @@
 
 [ext_resource type="PackedScene" path="res://scenes/black_page/main.tscn" id="1_n4bbw"]
 
-[node name="BlackPage" unique_id=702637645 instance=ExtResource("1_n4bbw")]
+[node name="BlackPage" unique_id=822340574 instance=ExtResource("1_n4bbw")]
