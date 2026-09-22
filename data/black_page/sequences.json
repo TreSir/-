@@ -29,6 +29,32 @@
       }
     ]
   },
+  "prologue_package_open": {
+    "name": "拆开无主包裹",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_page_turn.wav"
+      },
+      {
+        "at": 0.0,
+        "wait": 0.25
+      }
+    ]
+  },
+  "prologue_page_turn": {
+    "name": "翻开规则页",
+    "steps": [
+      {
+        "at": 0.0,
+        "sfx": "res://assets/audio/sfx_page_turn.wav"
+      },
+      {
+        "at": 0.0,
+        "wait": 0.25
+      }
+    ]
+  },
   "prologue_countdown": {
     "name": "倒计时开始（滴答，音乐退场）",
     "steps": [
@@ -51,6 +77,15 @@
       }
     ]
   },
+  "prologue_silence": {
+    "name": "23:47后的三秒",
+    "steps": [
+      {
+        "at": 0.0,
+        "wait": 3.0
+      }
+    ]
+  },
   "prologue_phone_buzz": {
     "name": "手机震动",
     "steps": [
@@ -69,6 +104,30 @@
       }
     ]
   },
+  "prologue_ink_message": {
+    "name": "纸纤维中渗出文字",
+    "steps": [
+      {
+        "at": 0.0,
+        "wait": 0.9
+      }
+    ]
+  },
+  "prologue_title_reveal": {
+    "name": "正式片名",
+    "steps": [
+      {
+        "at": 0.0,
+        "title_card": {
+          "text": "黑　页",
+          "subtitle": "BLACK PAGE",
+          "reveal": 1.4,
+          "hold": 1.3,
+          "fade": 0.6
+        }
+      }
+    ]
+  },
   "prologue_phone_ring": {
     "name": "许妍来电",
     "steps": [
@@ -84,6 +143,21 @@
       {
         "at": 0.0,
         "sfx": "res://assets/audio/sfx_impact.wav"
+      }
+    ]
+  },
+  "prologue_chapter_title": {
+    "name": "第一章章名",
+    "steps": [
+      {
+        "at": 0.0,
+        "title_card": {
+          "text": "第一章",
+          "subtitle": "她失踪了",
+          "reveal": 0.7,
+          "hold": 1.0,
+          "fade": 0.5
+        }
       }
     ]
   }

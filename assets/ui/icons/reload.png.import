@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dv65m1qbe8ynp"
-path="res://.godot/imported/black_page_prologue_door_v1.png-5173fcb1d48b9ce52524e729ceb189ff.ctex"
+uid="uid://cses3lk0phmff"
+path="res://.godot/imported/reload.png-b8e4bfdb469d102ea3d3932c2d7921ec.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/backgrounds/black_page_prologue_door_v1.png"
-dest_files=["res://.godot/imported/black_page_prologue_door_v1.png-5173fcb1d48b9ce52524e729ceb189ff.ctex"]
+source_file="res://assets/ui/icons/reload.png"
+dest_files=["res://.godot/imported/reload.png-b8e4bfdb469d102ea3d3932c2d7921ec.ctex"]
 
 [params]
 

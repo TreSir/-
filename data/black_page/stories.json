@@ -1,412 +1,155 @@
 {
   "prologue": {
-    "name": "序章",
-    "start": "night",
+    "name": "序章：黑页应验",
+    "start": "arrival",
     "nodes": {
-      "night": {
-        "steps": [
-          {
-            "say": [
-              "你把门在身后关上，潮湿的城市被隔在外面。",
-              "屋子里没有开灯，雨声反而更清楚了。"
-            ]
-          },
-          {
-            "say": [
-              "出租屋不大，也没有什么特别。",
-              "电脑屏幕还亮着。手机放在桌上，亮了一下。",
-              "窗外是雨。桌面和床都没收拾。",
-              "——先随便看看。",
-              "屏幕亮着。许妍发来两条新消息。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.xu_is_ex": true
-              }
-            }
-          },
-          {
-            "say": [
-              "许妍：我之前是不是还有一个U盘落你那里？<br>你：好像在抽屉。",
-              "许妍：别给我弄丢了。<br>你：都分手一年了，你还把我这当储物柜？",
-              "许妍：不然呢，你的优点不就剩东西从来不扔了吗。",
-              "许妍：明天晚上有空吗？<br>我过去拿一下。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.reply": "have_time"
-              }
-            }
-          },
-          {
-            "say": [
-              "她问得很平常。",
-              "你们已经分开一年，但还没有把彼此从生活里完全删掉。",
-              "你：有。<br>许妍：行，明天联系你。"
-            ]
-          },
-          {
-            "say": [
-              "聊天结束。",
-              "你把手机放回桌上，才想起上楼时门口似乎放着什么。",
-              "好像还有东西没拿进来。"
-            ]
-          },
-          {
-            "say": [
-              "门外只有一只包裹。",
-              "纯黑，没有快递公司的包装，也没有寄件人。",
-              "标签上只有你的名字和房间号码。",
-              "“什么时候放在这的？”",
-              "楼道里没有脚步声。你把它拿进房间。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.package_received": true
-              }
-            }
-          },
-          {
-            "say": [
-              "黑色封纸沿接缝裂开。",
-              "里面没有填充物，也没有说明书。",
-              "只有一本黑色硬皮笔记本，和一支黑色钢笔。"
-            ]
-          },
-          {
-            "goto": "the_name"
-          }
-        ]
-      },
-      "the_name": {
-        "steps": [
-          {
-            "say": [
-              "第一页不是空白。",
-              "字迹不像印刷，更像有人刚用钢笔写上去。",
-              "“……什么东西？”",
-              "“恶作剧？”",
-              "写下他的真实姓名。<br>记住他的脸。<br>他会死。<br>不要写你不认识的人。"
-            ]
-          },
-          {
-            "say": [
-              "第二页已经有一个名字。",
-              "“周启明？”",
-              "这个名字对你没有任何意义。",
-              "名字下面只有一行更小的字：23:47。"
-            ]
-          },
-          {
-            "say": [
-              "现在是22:25。",
-              "距离23:47还有一个多小时。",
-              "至少先确认，这是不是一个真实存在的人。"
-            ]
-          },
-          {
-            "say": [
-              "搜索结果很多。",
-              "周启明，42岁，启明资本负责人。",
-              "公开照片上的脸清楚得足以让你记住。这个人真的存在。"
-            ]
-          },
-          {
-            "say": [
-              "《启明资本多名投资者损失数百万》",
-              "《老人称养老积蓄全部被骗》",
-              "《周启明回应：公司经营不存在欺诈》",
-              "指控和否认同时存在。案件仍在调查。现在没人能替你判定谁说的是真的。"
-            ]
-          },
-          {
-            "goto": "the_wait"
-          }
-        ]
-      },
-      "the_wait": {
-        "steps": [
-          {
-            "sequence": "prologue_music_low"
-          },
-          {
-            "say": [
-              "笔记仍放在桌上。",
-              "雨比刚才更密。时间不会真的让你在这里干等一个小时。"
-            ]
-          },
-          {
-            "say": [
-              "四十二分钟。",
-              "你开始怀疑自己为什么还盯着一个荒唐的时间。"
-            ]
-          },
-          {
-            "sequence": "prologue_countdown"
-          },
-          {
-            "say": [
-              "雨越来越大。",
-              "房间里原本若有若无的音乐已经停了，只剩雨和墙上时钟。",
-              "离那个时间还有十五分钟。"
-            ]
-          },
-          {
-            "say": [
-              "你不再做别的事。",
-              "视线在电脑、手机和那本笔记之间来回移动。",
-              "两分钟。"
-            ]
-          },
-          {
-            "sequence": "prologue_last_minute"
-          },
-          {
-            "say": [
-              "雨点落在玻璃上，别的什么都听不见。",
-              "时钟走过最后一分钟。"
-            ]
-          },
-          {
-            "say": [
-              "什么都没有发生。",
-              "一秒。两秒。三秒。",
-              "你轻轻笑了一下。",
-              "“果然。”"
-            ]
-          },
-          {
-            "sequence": "prologue_phone_buzz"
-          },
-          {
-            "say": [
-              "嗡——",
-              "手机在桌面上震动。",
-              "一条本地新闻推送占满屏幕。"
-            ]
-          },
-          {
-            "say": [
-              "页面里是公司门口的救护车和不断刷新的记者消息。",
-              "没有人知道具体发生了什么。",
-              "几十秒后，标题自己跳了一下。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.zhou_qiming_dead": true,
-                "prologue.black_page_real": true
-              }
-            }
-          },
-          {
-            "say": [
-              "标题改变了。",
-              "周启明经抢救无效死亡。",
-              "院方确认的死亡时间，和笔记上的数字完全一致。"
-            ]
-          },
-          {
-            "goto": "after"
-          }
-        ]
-      },
-      "after": {
-        "steps": [
-          {
-            "say": [
-              "房间没有任何变化。",
-              "可那本笔记已经不再是几分钟前的东西。",
-              "你慢慢走向桌子，再次把它打开。"
-            ]
-          },
-          {
-            "say": [
-              "周启明。23:47。",
-              "名字和时间依旧存在。",
-              "“不可能。”"
-            ]
-          },
-          {
-            "say": [
-              "第三页是空白的。",
-              "你确定刚才翻过这里。右下角什么都没有。",
-              "然后，一点墨色从纸纤维里渗出来。",
-              "下一次。"
-            ]
-          },
-          {
-            "sequence": "prologue_book_close"
-          },
-          {
-            "say": [
-              "墨迹没有停。",
-              "那句话刚才并不存在。",
-              "你猛地合上笔记。",
-              "由你来写。"
-            ]
-          },
-          {
-            "say": [
-              "黑　页"
-            ]
-          },
-          {
-            "goto": "morning"
-          }
-        ]
-      },
-      "morning": {
-        "steps": [
-          {
-            "sequence": "prologue_phone_ring"
-          },
-          {
-            "say": [
-              "手机铃声突然响起。",
-              "窗外已经亮了，昨夜的雨还留在玻璃上。",
-              "来电人：许妍。"
-            ]
-          },
-          {
-            "say": [
-              "没有人说话。",
-              "只有急促的脚步、风声、远处经过的车辆，还有许妍明显压低的呼吸。",
-              "“许妍？”",
-              "“喂？”"
-            ]
-          },
-          {
-            "sequence": "prologue_phone_drop"
-          },
-          {
-            "say": [
-              "电话里传来一句很轻的话。",
-              "你只听清一个字：",
-              "“别……”",
-              "砰。像是手机摔到地上。通话中断。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.xu_unreachable": true
-              }
-            }
-          },
-          {
-            "say": [
-              "您拨打的用户暂时无法接通。",
-              "你重新发出一条消息：",
-              "“你怎么了？”",
-              "消息已送达。没有回复。"
-            ]
-          },
-          {
-            "say": [
-              "你看了一眼桌上的黑色笔记，又看向手机。",
-              "昨晚她明明还说：明天联系你。",
-              "现在没有任何回应。"
-            ]
-          },
-          {
-            "effect": {
-              "set": {
-                "prologue.completed": true,
-                "prologue.black_page_real": true,
-                "prologue.zhou_qiming_dead": true,
-                "prologue.xu_is_ex": true,
-                "prologue.xu_unreachable": true,
-                "ui.people": true,
-                "ui.pocket": true
-              }
-            }
-          },
-          {
-            "say": [
-              "第一章<br>《她失踪了》"
-            ]
-          }
-        ]
-      }
+      "arrival": {"steps": [
+        {"scene": "room"},
+        {"say": ["10月17日，22:18。", "你把门在身后关上。潮湿的城市被挡在外面，雨声却更清楚了。", "出租屋没有开灯。显示器待机的冷光贴着桌沿，手机在桌上亮了一下。", "上楼时，你记得门口似乎放着什么。"]},
+        {"goto": "explore"}
+      ]},
+      "explore": {"steps": [
+        {"scene": "room"},
+        {"choice": {"prompt": "先看哪里？", "options": [
+          {"text": "查看手机上的新消息。", "requires": [{"flag": "prologue.look_phone", "value": false}], "effects": {"set": {"prologue.look_phone": true, "prologue.xu_is_ex": true}}, "goto": "phone"},
+          {"text": "拉开书桌抽屉。", "requires": [{"flag": "prologue.look_drawer", "value": false}], "effects": {"set": {"prologue.look_drawer": true}}, "goto": "drawer"},
+          {"text": "走到窗边看看雨。", "requires": [{"flag": "prologue.look_window", "value": false}], "effects": {"set": {"prologue.look_window": true}}, "goto": "window"},
+          {"text": "打开房门，把门外的东西拿进来。", "goto": "door_gate"}
+        ]}}
+      ]},
+      "phone": {"steps": [
+        {"scene": "phone"},
+        {"say": ["许妍发来两条新消息。她是你的前女友，分开一年后，你们仍没有把彼此从生活里完全删掉。", "许妍：我之前是不是还有一个U盘落你那里？", "许妍：明天晚上有空吗？我过去拿一下。"]},
+        {"choice": {"prompt": "怎么回复？", "options": [
+          {"text": "回复：“有空，明晚过来吧。”", "effects": {"set": {"prologue.reply": "have_time"}}, "goto": "reply_have"},
+          {"text": "回复：“你现在过来也行。”", "effects": {"set": {"prologue.reply": "come_over"}}, "goto": "reply_come"},
+          {"text": "回复：“明天再说。”", "effects": {"set": {"prologue.reply": "tomorrow"}}, "goto": "reply_tomorrow"}
+        ]}}
+      ]},
+      "reply_have": {"steps": [{"say": ["你：有空，明晚过来吧。", "许妍：行，明天联系你。"]}, {"goto": "explore"}]},
+      "reply_come": {"steps": [{"say": ["你：你现在过来也行。", "许妍：今天不方便。明晚吧，到时联系你。"]}, {"goto": "explore"}]},
+      "reply_tomorrow": {"steps": [{"say": ["你：明天再说。", "许妍：好。别把U盘弄丢了。"]}, {"goto": "explore"}]},
+      "drawer": {"steps": [
+        {"scene": "room"},
+        {"say": ["抽屉被旧票据卡住了一下。那只蓝色U盘还在最里面。", "你没有把它拿出来。至少明晚她来时，不必再翻一次。"]},
+        {"goto": "explore"}
+      ]},
+      "window": {"steps": [
+        {"scene": "room"},
+        {"say": ["雨把对面楼的灯拉成一条条模糊的线。", "楼下没有快递车，走廊的声控灯也早已熄灭。"]},
+        {"goto": "explore"}
+      ]},
+      "door_gate": {"steps": [
+        {"if": {"requires": [{"flag": "prologue.look_phone", "value": true}], "then": "package", "else": "phone_first"}}
+      ]},
+      "phone_first": {"steps": [
+        {"say": "手机又亮了一下。是许妍。她明晚要来拿东西——最好先看一眼。"},
+        {"effect": {"set": {"prologue.look_phone": true, "prologue.xu_is_ex": true}}},
+        {"goto": "phone"}
+      ]},
+      "package": {"steps": [
+        {"scene": "prologue_door_package"},
+        {"say": ["门外只有一只包裹。纯黑，没有快递公司的包装，也没有寄件人。", "标签上只有你的名字和房间号码。楼道里没有脚步声。"]},
+        {"effect": {"set": {"prologue.package_received": true}}},
+        {"scene": "prologue_package_open"},
+        {"sequence": "prologue_package_open"},
+        {"say": ["封纸沿接缝裂开。里面没有填充物，也没有说明书。", "只有一本黑色硬皮笔记本，和一支没有商标的黑色钢笔。"]},
+        {"goto": "rules"}
+      ]},
+      "rules": {"steps": [
+        {"scene": "notebook"},
+        {"sequence": "prologue_page_turn"},
+        {"say": ["第一页不是空白。字迹不像印刷，更像有人刚用钢笔写上去。", "写下他的真实姓名。\n记住他的脸。\n他会死。\n不要写你不认识的人。", "你把这几行字从头读了两遍。没有落款，也没有解释。", "第二页已经有一个名字：周启明。名字下面只有一行更小的数字——23:47。"]},
+        {"goto": "search"}
+      ]},
+      "search": {"steps": [
+        {"scene": "prologue_search"},
+        {"say": ["现在是22:25。你在搜索栏输入那个名字。", "周启明，42岁，启明资本负责人。公开照片上的脸清楚得足以让你记住。", "新闻一边写着多名投资者损失惨重，一边刊登他的否认。案件仍在调查。", "这个人真实存在。但没有任何一条搜索结果能证明那本笔记。"]},
+        {"choice": {"prompt": "怎么处理笔记上的时间？", "options": [
+          {"text": "等到23:47，看它会不会应验。", "effects": {"set": {"prologue.wait_choice": "watch"}}, "goto": "wait_watch"},
+          {"text": "合上笔记，不再陪恶作剧浪费时间。", "effects": {"set": {"prologue.wait_choice": "dismiss"}}, "goto": "wait_dismiss"}
+        ]}}
+      ]},
+      "wait_watch": {"steps": [
+        {"scene": "room"}, {"sequence": "prologue_music_low"},
+        {"say": ["你把笔记留在桌面正中。时间不会真的让你在这里干等一个小时。", "四十二分钟后，你仍在看它。离那个时间还有十五分钟。"]},
+        {"goto": "countdown"}
+      ]},
+      "wait_dismiss": {"steps": [
+        {"scene": "room"}, {"sequence": "prologue_music_low"},
+        {"say": ["你合上笔记，试着处理别的事。可那个时间像一根刺，始终留在视线边缘。", "再次看向时钟，离23:47只剩十五分钟。你还是把笔记放回桌面正中。"]},
+        {"goto": "countdown"}
+      ]},
+      "countdown": {"steps": [
+        {"sequence": "prologue_countdown"},
+        {"say": ["房间里原本若有若无的音乐停了。只剩雨和墙上时钟。", "你的视线在电脑、手机和那本笔记之间来回移动。两分钟。"]},
+        {"sequence": "prologue_last_minute"},
+        {"say": ["时钟走过最后一分钟。", "23:47。什么都没有发生。"]},
+        {"sequence": "prologue_silence"},
+        {"say": ["三秒过去。你轻轻笑了一下。", "“果然。”"]},
+        {"sequence": "prologue_phone_buzz"},
+        {"scene": "phone"},
+        {"say": ["嗡——手机在桌面上震动。一条本地新闻推送占满屏幕。", "页面里是公司门口的救护车。几十秒后，标题自己刷新了。"]},
+        {"effect": {"set": {"prologue.zhou_qiming_dead": true, "prologue.black_page_real": true}}},
+        {"say": ["周启明经抢救无效死亡。", "院方确认的死亡时间：23:47。和笔记上的数字完全一致。"]},
+        {"goto": "after"}
+      ]},
+      "after": {"steps": [
+        {"scene": "notebook"},
+        {"say": ["房间没有任何变化。可那本笔记已经不再是几分钟前的东西。", "你重新翻开它。周启明。23:47。名字和时间依旧存在。", "第三页原本是空白。现在，一点墨色正从纸纤维里慢慢渗出来。"]},
+        {"sequence": "prologue_ink_message"},
+        {"say": "下一次。"},
+        {"sequence": "prologue_book_close"},
+        {"say": ["墨迹没有停。", "由你来写。"]},
+        {"sequence": "prologue_title_reveal"},
+        {"goto": "morning"}
+      ]},
+      "morning": {"steps": [
+        {"scene": "prologue_phone_morning"},
+        {"sequence": "prologue_phone_ring"},
+        {"say": ["手机铃声突然响起。窗外已经亮了，昨夜的雨还留在玻璃上。", "来电人：许妍。你接通电话。"]},
+        {"say": ["没有人说话。只有急促的脚步、风声、远处经过的车辆，还有她压低的呼吸。", "“许妍？”\n“喂？”"]},
+        {"sequence": "prologue_phone_drop"},
+        {"say": ["电话里传来一句很轻的话。你只听清一个字：", "“别……”", "砰。像是手机摔到地上。通话中断。"]},
+        {"effect": {"set": {"prologue.xu_unreachable": true}}},
+        {"say": ["你立刻回拨。您拨打的用户暂时无法接通。", "消息已送达。没有回复。昨晚她明明还说，明天联系你。"]},
+        {"scene": "room_morning"},
+        {"effect": {"set": {"prologue.completed": true, "prologue.black_page_real": true, "prologue.zhou_qiming_dead": true, "prologue.xu_is_ex": true, "prologue.xu_unreachable": true, "ui.people": true, "ui.pocket": true}}},
+        {"sequence": "prologue_chapter_title"}
+      ]}
     }
   },
   "chapter1_open": {
     "name": "第一章开场",
     "start": "start",
     "nodes": {
-      "start": {
-        "steps": [
-          {
-            "if": {
-              "requires": [
-                {
-                  "flag": "story.chapter1_open.done",
-                  "value": false
-                }
-              ],
-              "then": "morning"
-            }
-          }
-        ]
-      },
-      "morning": {
-        "steps": [
-          {
-            "effect": {
-              "set": {
-                "case.missing.state": "active"
-              }
-            }
-          },
-          {
-            "effect": {
-              "set": {
-                "story.chapter1_open.done": true
-              }
-            }
-          },
-          {
-            "say": [
-              "天亮了。雨没有停，只是比昨夜小了些。\n许妍的电话断掉之后，你再也没能联系上她。\n桌上的黑色笔记安静地放着。你还没有想清楚它到底是什么——但昨夜确实发生过。"
-            ]
-          }
-        ]
-      }
+      "start": {"steps": [
+        {"if": {"requires": [{"flag": "story.chapter1_open.done", "value": false}], "then": "morning"}}
+      ]},
+      "morning": {"steps": [
+        {"effect": {"set": {"case.missing.state": "active"}}},
+        {"effect": {"set": {"story.chapter1_open.done": true}}},
+        {"say": ["天亮了。雨没有停，只是比昨夜小了些。\n许妍的电话断掉之后，你再也没能联系上她。\n桌上的黑色笔记安静地放着。你还没有想清楚它到底是什么——但昨夜确实发生过。"]},
+        {"unlock": "linmo"},
+        {"say": ["报警电话转到负责失踪案的警官手里。\n林墨没有先安慰你，只确认了姓名和最后联系时间。"]},
+        {"choice": {"prompt": "林墨：她失联之前，有没有留下异常信息？", "options": [
+          {"text": "把断线电话和那个“别”字原样告诉他。", "effects": {"set": {"story.chapter1_report_style": "honest"}, "add": {"linmo_trust": 5}}, "goto": "report_honest"},
+          {"text": "只说她没有赴约，暂时隐去电话内容。", "effects": {"set": {"story.chapter1_report_style": "guarded"}}, "goto": "report_guarded"},
+          {"text": "先请他调取公交站附近的监控。", "effects": {"set": {"story.chapter1_report_style": "direct"}}, "goto": "report_direct"}
+        ]}}
+      ]},
+      "report_honest": {"steps": [{"say": ["你把电话里的脚步、风声和那一个没说完的字都告诉了他。\n林墨停了一下：“好。原话很重要，不要替她补完。”"]}]},
+      "report_guarded": {"steps": [{"say": ["你只说她原本约好过来，之后便再也联系不上。\n林墨问：“就这些？”\n“就这些。”你听见自己回答。"]}]},
+      "report_direct": {"steps": [{"say": ["“先查监控。她最后经过公交站。”\n林墨没有追问你为什么如此确定，只记下时间：“我会核实。你保持电话畅通。”"]}]}
     }
   },
-  "ink_written": {
-    "name": "落笔",
-    "start": "ink",
-    "nodes": {
-      "ink": {
-        "steps": [
-          {
-            "sequence": "ink_settles"
-          }
-        ]
-      }
-    }
-  },
+  "ink_written": {"name": "落笔", "start": "ink", "nodes": {"ink": {"steps": [{"sequence": "ink_settles"}]}}},
   "chapter1_end": {
     "name": "首章落幕",
     "start": "gate",
     "nodes": {
       "gate": {
-        "requires": [
-          {
-            "flag": "person.linmo.status",
-            "op": "!=",
-            "value": "dead"
-          }
-        ],
+        "requires": [{"flag": "person.linmo.status", "op": "!=", "value": "dead"}],
         "broken": "林墨不在了。\n没有人能接住你查到的这些东西，案子失去了继续查下去的必要条件。",
         "steps": []
       }

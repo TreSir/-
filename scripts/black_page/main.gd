@@ -110,6 +110,9 @@ var _logo_button: Button
 var hotspot_debug := false
 var _modal_panel: PanelContainer
 var _modal_scroll: ScrollContainer
+## 剧情选择不是“系统弹窗”：它独立悬浮在主场景上，普通确认框和小游戏仍走 modal。
+var _choice_layer: Control
+var _choice_stack: VBoxContainer
 var _queue: Array = []
 var _on_done: Callable = Callable()
 ## 逐字显示当前这一句。求「该显示什么」交给 Typewriter——打字机全项目只此一份。
@@ -136,6 +139,9 @@ var _open_panel := ""
 ## 所以 ESC 不能只把它关掉——要按弹层上的「返回」处理：放弃调查、回房间。
 ## 只关弹层不释放锁的话，玩家会卡在「不能调查、不能存档」的状态里。
 var _investigation_modal := false
+## 剧情正在等玩家选一句话。它也是弹层，但没有“取消”语义：ESC 不能把它关掉，
+## 否则执行器仍停在 choice 上，玩家却再也找不回选项。
+var _story_choice_active := false
 
 
 func _ready() -> void:
@@ -216,6 +222,7 @@ func _build() -> void:
 
 	_build_menu()
 	_build_modal()
+	_build_story_choices()
 
 	# 小游戏经理：小游戏进的是弹层（container = modal_rows），
 	# 于是「弹层被清空」就等于「玩家离开了这一局」——返回 / ESC / 回到房间
@@ -373,6 +380,8 @@ func _set_speaker(line: String) -> void:
 ## 认不出来（比如「经办人说：……」这种一次性的路人）就不显示立绘。
 func _speaker_of(line: String) -> String:
 	for id in game.bundle.people:
+		# 序章只通过电话认识许妍；正面立绘会提前泄露她的视觉信息。
+		if str(id) == "xu": continue
 		var name_text := str(game.bundle.people[id].name)
 		if line.begins_with(name_text + "：") or line.begins_with(name_text + ":"):
 			return str(id)
@@ -572,6 +581,26 @@ func _build_modal() -> void:
 
 	modal.hide()
 
+## 场景内选择层：没有遮罩、没有外框，只在右侧放提问和选项卡。
+func _build_story_choices() -> void:
+	_choice_layer = Control.new()
+	_choice_layer.name = "StoryChoiceLayer"
+	_choice_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_choice_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_choice_layer)
+
+	_choice_stack = VBoxContainer.new()
+	_choice_stack.name = "StoryChoiceStack"
+	_choice_stack.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_choice_stack.offset_left = -600
+	_choice_stack.offset_right = -72
+	_choice_stack.offset_top = -188
+	_choice_stack.offset_bottom = 188
+	_choice_stack.add_theme_constant_override("separation", 13)
+	_choice_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_choice_layer.add_child(_choice_stack)
+	_choice_layer.hide()
+
 # ── 剧情推进 ─────────────────────────────────────────────────────────────
 ## 记一句看过的文字。**序章也走这里**（它拿到的 game 旁边多一个 record 回调）。
 func record_line(text: String) -> void:
@@ -660,10 +689,10 @@ func _advance_story() -> void:
 		return
 	_show_next_beat()
 
-## 回房间的公共部分：收菜单、收弹层、把音乐拿回来、等转场走完。
-## 「剧情之后进房间」和「从哪回房间」都走它——两条路各写一份的话，
+## 回到房间机位的公共部分：收菜单、收弹层、把音乐拿回来、等转场走完。
+## 夜景与清晨只差落点场景 id，其余收尾共用——两条路各写一份的话，
 ## 漏一处就会出现「回来了但音乐没回来／弹层还挂着」。
-func _settle_into_room() -> void:
+func _settle_into_scene(id: String) -> void:
 	_close_menu()
 	_close_modal()
 	# 回房间前把没演完的演出收掉：幕布 / 闪光 / 震屏都要归位，
@@ -672,7 +701,10 @@ func _settle_into_room() -> void:
 	# 从「黑页时刻」回来，音乐拿回来（没淡出过的话 play_track 自己会早退）。
 	if is_instance_valid(music): music.play_track(AudioTracks.MUSIC_GAME)
 	_in_room = true
-	await _transition_to(Scenes.ROOM)
+	await _transition_to(id)
+
+func _settle_into_room() -> void:
+	await _settle_into_scene(Scenes.ROOM)
 
 ## 回房间。
 ##
@@ -692,7 +724,7 @@ func _enter_room(note_error: String = "", note_success: String = "") -> void:
 func _reveal_game() -> void:
 	if game.bundle.is_empty(): return
 	_reveal_hud(true)
-	await _settle_into_room()
+	await _settle_into_scene(Scenes.ROOM_MORNING)
 	# 底部台词先落到最新一条：剧情已经演过（读档回来）时也不空着。
 	refresh()
 	_play_story("chapter1_open")
@@ -708,6 +740,8 @@ func _play_story(story_id: String, done: Callable = Callable()) -> void:
 		story = Runner.new()
 		story.game = game
 		story.display = func(lines: Array, next: Callable): _say(lines, next)
+		story.present_choice = Callable(self, "_show_story_choice")
+		story.present_scene = Callable(self, "_show_story_scene")
 		story.performer = Callable(director, "play")
 		# 剧情里的小游戏由经理跑（minigame 指令）：演到那一步就装进弹层，
 		# 打完把执行器放行继续往下演。
@@ -728,6 +762,11 @@ func _play_story(story_id: String, done: Callable = Callable()) -> void:
 		# 不过「不忙」也可能是**断在半路**——那是另一种收场，交给 broken 处理过。
 		if story.broken_reason.is_empty(): _on_story_finished()
 		return
+
+## 剧情只声明场景 id；整屏贴图、转场和输入遮罩仍由表现层统一负责。
+func _show_story_scene(id: String, done: Callable) -> void:
+	await _transition_to(id)
+	if done.is_valid(): done.call()
 
 ## 剧情收场（演完 / 出错）时把调用方放行。**取出来先清掉再调**——
 ## 回调里可能又开一段新剧情（_play_story 会覆盖 _story_done），
@@ -891,10 +930,12 @@ func _layout_hotspots() -> void:
 ##
 ## 第一次碰某个实体时顺带把对应侧栏入口点亮——功能跟着探索长出来，不是开局全给。
 ##
-## 剧情演出期间背景不接活：序章和开场白都是在房间里演的，热区跟着 HUD 一起露着，
-## 这时候碰实体弹出面板会打断演出（笔记本还会提前解锁）。演出有自己的推进口。
+## 剧情演出期间不打开实体面板，但必须把这次点击转给剧情推进。
+## 热区位于全屏推进按钮上方，会先吃到鼠标事件；只 return 会导致玩家点显示器、手机、
+## 笔记本这些最显眼的位置时毫无反应。
 func _hotspot_pressed(uv: Dictionary) -> void:
 	if is_instance_valid(story) and story.busy():
+		_advance_story()
 		return
 	match str(uv.get("target", "")):
 		"notebook":
@@ -1602,6 +1643,49 @@ func _clear_modal() -> void:
 	_investigation_modal = false
 	if modal_rows != null: _clear(modal_rows)
 
+## NarrativeRunner 的 choice 表现层。这里只拿到提示与可见文字；选项效果和跳转仍
+## 封在执行器里。界面唯一能做的事，是把玩家点中的序号回传。
+func _show_story_choice(prompt: String, labels: Array, selected: Callable) -> void:
+	_open_panel = ""
+	_sync_nav()
+	_close_modal()
+	_clear(_choice_stack)
+	_story_choice_active = true
+	_choice_layer.show()
+	var question := UI.heading(prompt, UI.SIZE_TITLE)
+	question.name = "ChoicePrompt"
+	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	question.custom_minimum_size.y = 50
+	question.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	question.modulate.a = 0.0
+	_choice_stack.add_child(question)
+	record_line(prompt)
+	var prompt_tween := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	prompt_tween.tween_property(question, "modulate:a", 1.0, 0.2)
+	for option_index in labels.size():
+		var label := str(labels[option_index])
+		var button := UI.story_choice(label)
+		button.modulate.a = 0.0
+		button.pressed.connect(_select_story_choice.bind(option_index, label, selected))
+		_choice_stack.add_child(button)
+		var reveal := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		reveal.tween_interval(0.05 + option_index * 0.055)
+		reveal.tween_property(button, "modulate:a", 1.0, 0.2)
+
+func _select_story_choice(option_index: int, label: String, selected: Callable) -> void:
+	if not _story_choice_active: return
+	record_line("选择：" + label)
+	# 先收界面再让执行器继续。选择后的第一句可能同步出现，顺序反过来会被
+	# _close_modal() 连同新内容一起清掉。
+	_close_story_choice()
+	var error: String = str(selected.call(option_index))
+	if not error.is_empty(): _message(error)
+
+func _close_story_choice() -> void:
+	_story_choice_active = false
+	if _choice_layer != null: _choice_layer.hide()
+	if _choice_stack != null: _clear(_choice_stack)
+
 func _confirm(title_text: String, body: String, action: Callable) -> void:
 	_open_panel = ""
 	_sync_nav()
@@ -1674,6 +1758,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo: return
 	if event.keycode == KEY_ESCAPE:
 		if is_instance_valid(launch): return
+		# 选择是剧情闸门，没有取消语义；点选之前始终保留在场景上。
+		if _story_choice_active:
+			get_viewport().set_input_as_handled()
+			return
 		if _menu_layer != null and _menu_layer.visible:
 			_close_menu()
 			get_viewport().set_input_as_handled()

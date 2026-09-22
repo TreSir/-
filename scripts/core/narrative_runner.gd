@@ -19,7 +19,7 @@ signal broken(reason: String)
 ## 执行器认识的指令集合。**data_loader 的校验直接读这张表**——
 ## 加指令只改这里一处：不会出现「数据写了、引擎不认识」的静默丢弃，
 ## 也不会出现「引擎支持、数据校验先拦下来」。
-const COMMANDS := ["say", "effect", "clue", "unlock", "unlockinfo", "if", "goto", "sequence", "minigame"]
+const COMMANDS := ["say", "choice", "effect", "clue", "unlock", "unlockinfo", "if", "goto", "scene", "sequence", "minigame"]
 
 ## 节点认得的字段。**data_loader 的校验也读这张表**（和 COMMANDS 一个规矩）：
 ##   steps    —— 这个节点要做的动作（指令步，一步一条）
@@ -45,6 +45,14 @@ var game: Node
 ## 表现回调：func(lines: Array, done: Callable)。执行器说「这几句要演，演完叫我」；
 ## 怎么演是表现层的事，执行器不碰 UI。
 var display: Callable = Callable()
+## 对话选项回调：func(prompt: String, labels: Array, selected: Callable)。
+##
+## 执行器只把“玩家能看见的题目与选项文字”交给表现层；条件、效果和跳转仍留在
+## 核心层。UI 选完只回传可见选项的序号，不能自己改旗标或决定去哪个节点。
+var present_choice: Callable = Callable()
+## 场景表现回调：func(scene_id: String, done: Callable)。执行器只声明“看向哪里”，
+## 贴图、转场和输入遮罩仍由表现层处理；转场完成后回调 done 才继续剧情。
+var present_scene: Callable = Callable()
 ## 演出回调：func(sequence: Dictionary, done: Callable)。重点演出（演出导演）走它，
 ## 和 display 一个约定——演出时长归导演管，执行器只等 done。
 var performer: Callable = Callable()
@@ -54,6 +62,10 @@ var performer: Callable = Callable()
 var play_minigame: Callable = Callable()
 
 var _running := false
+## 当前是否停在 choice 上，以及经过 requires 过滤后的可见选项。
+## 保存的是原始选项数据，但只存在执行器内部，不交给 UI。
+var _awaiting_choice := false
+var _choice_options: Array = []
 
 ## 开播一段剧情。失败返回原因（同时写进 error），成功返回空串。
 ## 数据没加载 / 未知剧情 / 上一段还没演完，都在这里拒绝。
@@ -61,6 +73,7 @@ var _running := false
 func play(id: String) -> String:
 	error = ""
 	broken_reason = ""
+	_clear_choice()
 	if game == null or game.bundle.is_empty(): return _fail("游戏数据还没加载")
 	if _running: return _fail("上一段剧情还没演完")
 	var stories: Dictionary = game.bundle.get("stories", {})
@@ -74,9 +87,29 @@ func play(id: String) -> String:
 
 ## 表现层把一批台词演完后调这个，执行器接着往下走。
 func ack() -> void:
-	if not _running: return
+	# 选择题只能由 choose() 放行。背景点击 / 残留的台词回调都不能替玩家选。
+	if not _running or _awaiting_choice: return
 	index += 1
 	_run()
+
+## 表现层回传一次玩家选择。返回空串表示成功；非法回传不会推进剧情，玩家仍可选择。
+func choose(option_index: int) -> String:
+	if not _running or not _awaiting_choice:
+		return "当前没有等待选择的剧情"
+	if option_index < 0 or option_index >= _choice_options.size():
+		return "选择序号超出范围"
+	var option: Dictionary = _choice_options[option_index]
+	_clear_choice()
+	var label := str(option.get("text", ""))
+	game.log_narrative("选择：" + label)
+	_write(game.apply_effects(option.get("effects", {})))
+	var target := str(option.get("goto", ""))
+	if not target.is_empty():
+		_go_to(target)
+	else:
+		index += 1
+	_run()
+	return ""
 
 ## 这段剧情还在演吗（在等台词 ack，或在等一段演出）。
 ## 调用方「演完调我」的回调不区分同步演完 / 根本没开播，就靠它判断。
@@ -116,6 +149,12 @@ func _run() -> void:
 		match command:
 			"say":
 				_say(step[command])
+				return
+			"choice":
+				_choice(step[command])
+				return
+			"scene":
+				_scene(step[command])
 				return
 			"sequence":
 				_sequence(step[command])
@@ -160,6 +199,38 @@ func _say(raw: Variant) -> void:
 		ack()
 		return
 	display.call(lines, ack)
+
+## 显示一个数据驱动的对话选择。requires 不成立的选项不会交给表现层；加载器要求
+## 至少有一个无条件兜底，所以正常数据不会走到“无项可选”。
+func _choice(raw: Variant) -> void:
+	var data: Dictionary = raw
+	_choice_options.clear()
+	for raw_option in data.get("options", []):
+		var option: Dictionary = raw_option
+		if game.matches(option.get("requires", [])):
+			_choice_options.append(option)
+	if _choice_options.is_empty():
+		_fail("对话选择没有可用选项")
+		return
+	if not present_choice.is_valid():
+		_fail("没有注入对话选择表现回调")
+		return
+	_awaiting_choice = true
+	var prompt := str(data.get("prompt", ""))
+	game.log_narrative(prompt)
+	var labels: Array = []
+	for option in _choice_options:
+		labels.append(str((option as Dictionary).get("text", "")))
+	present_choice.call(prompt, labels, Callable(self, "choose"))
+
+## 声明式换景。没有表现回调时安静跳过，和 sequence / minigame 的降级规则一致。
+func _scene(raw: Variant) -> void:
+	var id := str(raw)
+	if not present_scene.is_valid():
+		push_warning("剧情执行器：没有注入场景回调，场景「%s」只跳过" % id)
+		ack()
+		return
+	present_scene.call(id, ack)
 
 ## 来一段重点演出，**等它演完再继续**（设计文档 §7：演出的时长归演出系统管，
 ## 剧情在这里暂停）。和台词一样：没有演出回调就告警跳过，不能卡住剧情。
@@ -206,6 +277,7 @@ func _write(message: String) -> void:
 	if not message.is_empty(): push_warning("剧情执行器：写状态失败——" + message)
 
 func _finish() -> void:
+	_clear_choice()
 	_running = false
 	finished.emit()
 
@@ -214,6 +286,7 @@ func _finish() -> void:
 ## （前者继续往下走，后者要拿出路），合并成一个信号就等于把这两种事混作一谈。
 ## 原因取自剧情数据里节点自己的 `broken` 文案：为什么断，只有这一段剧情说得清。
 func _break(reason: String) -> void:
+	_clear_choice()
 	_running = false
 	broken_reason = reason
 	push_warning("剧情执行器：因果链已断裂——%s" % reason)
@@ -225,7 +298,12 @@ func _break(reason: String) -> void:
 func _fail(message: String) -> String:
 	error = message
 	var was_running := _running
+	_clear_choice()
 	_running = false
 	push_warning("剧情执行器：" + message)
 	if was_running: finished.emit()
 	return message
+
+func _clear_choice() -> void:
+	_awaiting_choice = false
+	_choice_options.clear()

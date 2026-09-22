@@ -6,6 +6,8 @@ const Rules = preload("res://scripts/core/rules.gd")
 const Runner = preload("res://scripts/core/narrative_runner.gd")
 ## 演出数据的校验同理，照着**导演认识的动作表**来（performance_director.gd）。
 const Director = preload("res://scripts/black_page/performance_director.gd")
+## 剧情 scene 指令的合法场景表。数据在加载期就拦住拼错的场景名。
+const Scenes = preload("res://scripts/black_page/scenes.gd")
 ## 小游戏结果的类型词表也读代码里那一张（core/minigame_result.gd）。
 const MiniGameResult = preload("res://scripts/core/minigame_result.gd")
 ## 案件状态的词表（locked / active / completed）读代码里那一张（core/case_manager.gd）。
@@ -229,6 +231,21 @@ func _validate_performance(action: String, argument: Variant, pointer: String) -
 		"fade_in", "fade_out", "shake", "flash", "wait":
 			if not (argument is float or argument is int) or float(argument) <= 0.0:
 				return _fail("sequences", pointer + "/" + action, "时长必须是正数")
+		"title_card":
+			if not argument is Dictionary:
+				return _fail("sequences", pointer + "/title_card", "标题卡必须为对象")
+			var card: Dictionary = argument
+			for key in card:
+				if key not in ["text", "subtitle", "reveal", "hold", "fade"]:
+					return _fail("sequences", pointer + "/title_card", "未知字段：" + str(key))
+			if not card.get("text") is String or str(card.get("text", "")).strip_edges().is_empty():
+				return _fail("sequences", pointer + "/title_card/text", "标题文字不能为空")
+			if card.has("subtitle") and not card.subtitle is String:
+				return _fail("sequences", pointer + "/title_card/subtitle", "副标题必须是字符串")
+			for field in ["reveal", "hold", "fade"]:
+				var value: Variant = card.get(field, 1.0)
+				if not (value is float or value is int) or float(value) <= 0.0:
+					return _fail("sequences", pointer + "/title_card/" + field, "时长必须是正数")
 	return true
 
 ## 小游戏（minigames.json）的校验：名字 / 场景存在 / 参数形状，
@@ -348,6 +365,45 @@ func _validate_story_step(command: String, argument: Variant, pointer: String, n
 					if not line is String: return _fail("stories", pointer + "/say", "台词必须是字符串")
 				return true
 			return _fail("stories", pointer + "/say", "台词必须是字符串或字符串数组")
+		"choice":
+			if not argument is Dictionary:
+				return _fail("stories", pointer + "/choice", "choice 必须为对象")
+			var choice: Dictionary = argument
+			for key in choice:
+				if key not in ["prompt", "options"]:
+					return _fail("stories", pointer + "/choice", "未知字段：" + str(key))
+			if not choice.get("prompt") is String or str(choice.get("prompt", "")).strip_edges().is_empty():
+				return _fail("stories", pointer + "/choice/prompt", "缺少选择提示")
+			var options: Variant = choice.get("options")
+			if not options is Array or (options as Array).size() < 2:
+				return _fail("stories", pointer + "/choice/options", "对话选择至少需要两个选项")
+			var labels: Array = []
+			var fallback := 0
+			for index in (options as Array).size():
+				var option: Variant = options[index]
+				var option_pointer := pointer + "/choice/options/" + str(index)
+				if not option is Dictionary:
+					return _fail("stories", option_pointer, "选项必须为对象")
+				for key in option:
+					if key not in ["text", "requires", "effects", "goto"]:
+						return _fail("stories", option_pointer, "未知字段：" + str(key))
+				if not option.get("text") is String or str(option.get("text", "")).strip_edges().is_empty():
+					return _fail("stories", option_pointer + "/text", "选项缺少文字")
+				if option.text in labels:
+					return _fail("stories", option_pointer + "/text", "同一道选择里的文字不能重复")
+				labels.append(option.text)
+				var requirement: String = Rules.conditions_error(option.get("requires", []), bundle.flags, bundle.catalog)
+				if not requirement.is_empty():
+					return _fail("stories", option_pointer + "/requires", requirement)
+				if (option.get("requires", []) as Array).is_empty(): fallback += 1
+				var effect_error: String = Rules.effects_error(option.get("effects", {}), bundle.flags, bundle.catalog)
+				if not effect_error.is_empty():
+					return _fail("stories", option_pointer + "/effects", effect_error)
+				if option.has("goto") and not _check_story_node(option.goto, option_pointer + "/goto", nodes):
+					return false
+			if fallback == 0:
+				return _fail("stories", pointer + "/choice/options", "至少保留一个无条件选项，避免剧情无路可选")
+			return true
 		"effect":
 			var message: String = Rules.effects_error(argument, bundle.flags, bundle.catalog)
 			if not message.is_empty(): return _fail("stories", pointer + "/effect", message)
@@ -371,6 +427,10 @@ func _validate_story_step(command: String, argument: Variant, pointer: String, n
 		"sequence":
 			if not argument is String or not bundle.sequences.has(argument):
 				return _fail("stories", pointer + "/sequence", "未知演出：" + str(argument))
+			return true
+		"scene":
+			if not argument is String or not Scenes.has(argument):
+				return _fail("stories", pointer + "/scene", "未知场景：" + str(argument))
 			return true
 		"minigame":
 			if not argument is String or not bundle.minigames.has(argument):

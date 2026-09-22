@@ -27,6 +27,17 @@ const TABLE := {
 		{"id": "board", "u": 0.855, "v": 0.065, "w": 0.140, "h": 0.410,
 		 "label": "墙上的线索板", "target": "clues"},
 	],
+	# 清晨房间沿用同一机位和物件位置，热点无需复制第二套坐标。
+	"room_morning": [
+		{"id": "notebook", "u": 0.470, "v": 0.548, "w": 0.115, "h": 0.082,
+		 "label": "桌上的黑色笔记本", "target": "notebook"},
+		{"id": "monitor", "u": 0.350, "v": 0.350, "w": 0.180, "h": 0.180,
+		 "label": "亮着的显示器", "target": "monitor"},
+		{"id": "phone", "u": 0.255, "v": 0.445, "w": 0.075, "h": 0.105,
+		 "label": "床头柜上的手机", "target": "phone"},
+		{"id": "board", "u": 0.855, "v": 0.065, "w": 0.140, "h": 0.410,
+		 "label": "墙上的线索板", "target": "clues"},
+	],
 }
 
 

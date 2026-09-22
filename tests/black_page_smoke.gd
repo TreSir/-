@@ -19,7 +19,7 @@ var failures := 0
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。贴着总数减一：最后一条 check 就是门槛自己，
 ## 它跑到的时候还没把自己数进去。
-const UI_CHECK_FLOOR := 250
+const UI_CHECK_FLOOR := 261
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -65,13 +65,15 @@ func _esc() -> InputEventKey:
 	event.pressed = true
 	return event
 
-## 按文字找弹层里的按钮。**不按索引**：面板里摆了哪些东西是内容的一部分，
+## 按文字找弹层或场景选择层里的按钮。**不按索引**：摆了哪些东西是内容的一部分，
 ## 索引会随内容漂，文字不会——测试想点的是「那个写着回溯的按钮」。
 ## 两种摆法都认：文字在 Button 自己身上（primary / ghost 按钮），
 ## 或在一个子 Label 里（action_row 的行标题与灰掉的提示词）。
 func _button(ui: Node, text: String) -> Button:
-	for child in ui.modal_rows.get_children():
-		if child is Button and (child.text == text or _has_text(child, text)): return child
+	for root in [ui.modal_rows, ui._choice_stack]:
+		if root == null: continue
+		for child in root.get_children():
+			if child is Button and (child.text == text or _has_text(child, text)): return child
 	return null
 
 ## 节点子树里有没有这句话（子串匹配）。用来断言「灰掉的那一行写了原因」
@@ -324,7 +326,7 @@ func _run() -> void:
 	game.new_game()
 
 	# ── 叙事执行器（stories.json）的契约 ─────────────────────────────────
-	# 临时剧情挂在**真实 game** 上跑（不是另起一套 mock）：六种指令全走一遍。
+	# 临时剧情挂在**真实 game** 上跑（不是另起一套 mock）：所有指令都走真实状态口。
 	# 打完就删——测试数据不进游戏内容；状态回滚到检查点，不干扰后面的用例。
 	game.bundle.stories.smoke_gate_on = {
 		"name": "契约·走 then",
@@ -380,6 +382,45 @@ func _run() -> void:
 	var logged: int = game.journal.size()
 	check(runner.play("smoke_gate_off").is_empty() and game.journal.size() == logged + 1,
 		"say without a display still logs and moves on")
+	# 对话选择：执行器过滤条件、暂停等待；UI 只拿到文字和回传序号的回调。
+	# 选项自己的效果与 goto 都在核心层执行，不能让表现层直接改状态。
+	game.bundle.stories.smoke_choice = {
+		"name": "契约·对话选择",
+		"start": "ask",
+		"nodes": {
+			"ask": {"steps": [{"choice": {
+				"prompt": "怎么回答？",
+				"options": [
+					{"text": "隐藏项", "requires": [{"flag": "day", "op": ">=", "value": 99}],
+						"effects": {"set": {"story.chapter1_report_style": "honest"}}, "goto": "hidden"},
+					{"text": "谨慎回答", "effects": {"set": {"story.chapter1_report_style": "guarded"}}, "goto": "guarded"},
+					{"text": "直接回答", "effects": {"set": {"story.chapter1_report_style": "direct"}}, "goto": "direct"},
+				]}}]},
+			"hidden": {"steps": [{"say": "不该出现"}]},
+			"guarded": {"steps": [{"say": "谨慎之后"}]},
+			"direct": {"steps": [{"say": "直接之后"}]},
+		},
+	}
+	var offered: Array = []
+	var choose_callback := [Callable()]
+	var choice_spoken: Array = []
+	runner.display = func(lines: Array, done: Callable):
+		choice_spoken.append_array(lines)
+		done.call()
+	runner.present_choice = func(prompt: String, labels: Array, selected: Callable):
+		offered.append(prompt)
+		offered.append(labels)
+		choose_callback[0] = selected
+	check(runner.play("smoke_choice").is_empty() and runner.busy() and offered == ["怎么回答？", ["谨慎回答", "直接回答"]],
+		"choice filters unavailable options and waits for the player")
+	check(runner.choose(9).contains("范围") and str(game.flag("story.chapter1_report_style")).is_empty(),
+		"an invalid choice cannot advance or write state")
+	check(str((choose_callback[0] as Callable).call(1)).is_empty()
+			and game.flag("story.chapter1_report_style") == "direct" and choice_spoken == ["直接之后"]
+			and not runner.busy(),
+		"the selected option applies effects through game and follows its goto")
+	check(str(game.journal.back()).contains("直接之后"), "the branch after a choice remains normal narrative")
+	game.bundle.stories.erase("smoke_choice")
 	# 半路坏掉的剧情（打点成环）也要发 finished——它是「收场」信号，不分正常还是出错；
 	# 等它的人（_play_story 的 done / 演出链）靠它放行，不能只在正常演完时才响。
 	var ended := [0]
@@ -490,21 +531,25 @@ func _run() -> void:
 	check(not compiled.has("prologue") and compiled.stories.has("prologue"),
 		"the prologue no longer compiles into a page array — it is a story")
 	var prologue: Dictionary = compiled.stories.prologue
-	check(prologue.start == "night" and prologue.nodes.size() == 5,
-		"the prologue is a five-node story that starts at its first scene")
+	check(prologue.start == "arrival" and prologue.nodes.size() == 18,
+		"the rebuilt prologue starts on arrival and keeps its beats in focused nodes")
 	var say_lines := 0
+	var scene_steps := 0
 	var settled := false
 	for node_id in prologue.nodes:
 		for step in prologue.nodes[node_id].steps:
-			if step.has("say"): say_lines += (step.say as Array).size()
+			if step.has("say"):
+				say_lines += 1 if step.say is String else (step.say as Array).size()
+			if step.has("scene"): scene_steps += 1
 			if step.has("effect") and bool(step.effect.get("set", {}).get("prologue.completed", false)):
 				settled = true
-	check(say_lines >= 100, "the prologue carries its full text through say steps (%d lines)" % say_lines)
+	check(say_lines >= 55, "the prologue carries its edited text through say steps (%d lines)" % say_lines)
+	check(scene_steps >= 12, "the prologue drives full-screen scene art declaratively (%d changes)" % scene_steps)
 	# 黑页时刻的声音全在 sequences.json 里（策划案 §九：开场只有雨声，音乐是后加的、还要消失）。
 	var prologue_steps := 0
 	for id in compiled.sequences:
 		if str(id).begins_with("prologue_"): prologue_steps += (compiled.sequences[id].steps as Array).size()
-	check(prologue_steps >= 7, "the prologue's audio cues live in sequences.json (%d steps)" % prologue_steps)
+	check(prologue_steps >= 14, "the prologue's audio and title cues live in sequences.json (%d steps)" % prologue_steps)
 	# 序章结尾的账：这些旗标是它交给第一章的交接物，一条都不能少。
 	check(settled, "the prologue settles its chapter flags through a data effect")
 	var bad: Dictionary = compiled.actions.badge.duplicate(true)
@@ -520,6 +565,24 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"dance": 1}]
 	check(not loader._compile_stories(broken) and loader.error.contains("未知指令"),
 		"unknown story command is rejected at compile time")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"choice": {
+		"prompt": "坏选择", "options": [
+			{"text": "一", "requires": [{"flag": "day", "value": 1}]},
+			{"text": "二", "requires": [{"flag": "day", "value": 2}]},
+		]}}]
+	check(not loader._compile_stories(broken) and loader.error.contains("无条件选项"),
+		"a choice must keep one unconditional route")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"choice": {
+		"prompt": "坏选择", "options": [{"text": "一"}, {"text": "二", "goto": "nowhere"}]}}]
+	check(not loader._compile_stories(broken) and loader.error.contains("nowhere"),
+		"a choice goto is validated at compile time")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"choice": {
+		"prompt": "坏选择", "options": [{"text": "一"}, {"text": "二", "effects": {"set": {"no_such_flag": true}}}]}}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
+		"choice effects are validated against declared state")
 	broken = compiled.duplicate(true)
 	broken.stories.chapter1_open.nodes.morning.steps = [{"effect": {"set": {"no_such_flag": 1}}}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_flag"),
@@ -555,6 +618,14 @@ func _run() -> void:
 	broken.stories.chapter1_open.nodes.morning.steps = [{"sequence": "no_such_sequence"}]
 	check(not loader._compile_stories(broken) and loader.error.contains("no_such_sequence"),
 		"story sequence references are validated")
+	broken = compiled.duplicate(true)
+	broken.stories.chapter1_open.nodes.morning.steps = [{"scene": "no_such_scene"}]
+	check(not loader._compile_stories(broken) and loader.error.contains("no_such_scene"),
+		"story scene references are validated")
+	broken = compiled.duplicate(true)
+	broken.sequences.prologue_title_reveal.steps = [{"at": 0.0, "title_card": {"text": "", "hold": -1.0}}]
+	check(not loader._compile_sequences(broken) and loader.error.contains("标题文字不能为空"),
+		"title cards reject incomplete data at compile time")
 	# 小游戏数据（minigames.json）的校验：场景 / 参数 / 结果声明在加载期就报出来；
 	# 结果类型词表读的是代码里那一张（MiniGameResult.TYPES）——数据少写一个也拦住。
 	broken = compiled.duplicate(true)
@@ -624,15 +695,24 @@ func _ui() -> void:
 	# 忘了换槽位就是「跑一次测试抹掉玩家的存档」。
 	ui.game.checkpoint_slot = "black_page_smoke_checkpoint"
 	ui._start_new_game()
+	# 启动页有 0.45 秒淡出；等它真正离开输入树，再检验游戏画面的命中。
+	await get_tree().create_timer(0.6).timeout
 	# 序章是一段普通剧情（stories.json 的 prologue），开场经由执行器播出来。
 	# 两段式推进：第一下把打字补完、**不翻句**，第二下才走——这是序章手感的关键。
-	# 两步之间不能有 await：只要跑过一帧，打字机可能自己打完，第一下就没测到。
+	# 用显示器热区上的真实点击来测：它盖在全屏推进层上方，曾经会吃掉事件，让画面中央点不动。
 	var first_beat: String = ui._typer.full_text()
 	check(not first_beat.is_empty(), "the prologue speaks before the first frame")
-	ui._advance_story()
+	# 淡出期间这句可能已经自然打完；重新以慢速挂回同一句，稳定验证“两次点击”契约。
+	ui._typer.set_line(first_beat, 1.0)
+	var prologue_monitor := ui._hotspot_layer.get_node_or_null("monitor") as Control
+	check(prologue_monitor != null and prologue_monitor.size.x > 0.0,
+		"the prologue room hotspot is laid out over the full-screen advance layer")
+	_click_at(ui, prologue_monitor.get_global_rect().get_center())
+	await get_tree().process_frame
 	check(ui._typer.full_text() == first_beat and not ui._is_typing(),
-		"first tap completes the typing instead of advancing")
-	ui._advance_story()
+		"a hotspot click completes typing instead of being swallowed")
+	_click_at(ui, prologue_monitor.get_global_rect().get_center())
+	await get_tree().process_frame
 	check(ui._typer.full_text() != first_beat, "the second tap moves the story on")
 	await get_tree().create_timer(0.6).timeout
 	check(ui._hud_layer.visible and ui.story.busy() and ui.story.story_id == "prologue",
@@ -663,21 +743,33 @@ func _ui() -> void:
 	# 每轮两下：第一下补完当前句的打字，第二下翻过去。
 	var prologue_guard := 0
 	while ui.story.busy() and ui.story.story_id == "prologue" and prologue_guard < 600:
+		if ui._story_choice_active:
+			var picked: Button = null
+			for label in [
+				"查看手机上的新消息。",
+				"回复：“有空，明晚过来吧。”",
+				"打开房门，把门外的东西拿进来。",
+				"等到23:47，看它会不会应验。",
+			]:
+				picked = _button(ui, label)
+				if picked != null: break
+			check(picked != null, "the automated prologue can select its current choice")
+			if picked != null: picked.pressed.emit()
 		ui._advance_story()
 		ui._advance_story()
-		await get_tree().process_frame
+		await get_tree().create_timer(0.04).timeout
 		prologue_guard += 1
 		# 截图模式：走在中途拍一张，方便肉眼验收（黑页时刻的字都在底部字幕带里）。
 		if "--capture-render" in OS.get_cmdline_user_args() and prologue_guard == 40:
 			await get_tree().create_timer(0.4).timeout
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_prologue.png")
-	check(prologue_guard >= 50, "every prologue beat was walked (%d rounds)" % prologue_guard)
+	check(prologue_guard >= 35, "every prologue beat was walked (%d rounds)" % prologue_guard)
 	# 剧情回顾：序章的正文必须被记下来——玩家点快了要能翻回去看。
 	# 记在 main 而不是序章自己：回顾要收全（序章 + 第一章），只能有一个地方收。
-	check((ui._history as Array).size() >= 100, "prologue text lands in the review history")
+	check((ui._history as Array).size() >= 45, "prologue text lands in the review history")
 	# 日志同理：序章的每一句都要经由 game 的口子落进去，结算 / 回顾才拿得到全文。
-	check(ui.game.journal.size() >= 100, "prologue text lands in the journal")
+	check(ui.game.journal.size() >= 50, "prologue text lands in the journal")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.1).timeout
 		await RenderingServer.frame_post_draw
@@ -692,10 +784,32 @@ func _ui() -> void:
 	for line in ui.game.journal:
 		if str(line).contains("天亮了"): found_opening = true
 	check(found_opening, "opening text comes from stories.json and lands in the journal")
-	# 读完这一句（第一下补完打字、第二下翻过它），再重播一次：
+	# 读到第一处真实对话选择：表现层摆文字，选择结果由执行器写状态并跳节点。
+	var opening_guard := 0
+	while not ui._choice_layer.visible and ui.story.busy() and opening_guard < 12:
+		ui._advance_story()
+		ui._advance_story()
+		await get_tree().process_frame
+		opening_guard += 1
+	check(ui._choice_layer.visible and not ui.modal.visible and ui._story_choice_active
+			and _has_text(ui._choice_stack, "她失联之前"),
+		"the opening story floats its dialogue choice over the scene without the modal")
+	var honest_choice := _button(ui, "把断线电话和那个“别”字原样告诉他。")
+	check(honest_choice != null, "the dialogue option is a real button")
+	if honest_choice != null: honest_choice.pressed.emit()
+	await get_tree().process_frame
+	check(ui.game.flag("story.chapter1_report_style") == "honest" and int(ui.game.flag("linmo_trust")) == 35,
+		"selecting dialogue writes its declared result through GameState")
+	# 把选择后的回应读完，再重播一次：
 	# 已经播过的剧情**不再重播**，闸门是剧情数据自己的 if，不是界面里的特判。
-	ui._advance_story()
-	ui._advance_story()
+	opening_guard = 0
+	while ui.story.busy() and opening_guard < 12:
+		ui._advance_story()
+		ui._advance_story()
+		await get_tree().process_frame
+		opening_guard += 1
+	check(not ui.story.busy() and not ui._choice_layer.visible and not ui.modal.visible,
+		"the selected dialogue branch closes the floating choices and returns to normal story flow")
 	var journal_size: int = ui.game.journal.size()
 	ui._play_story("chapter1_open")
 	await get_tree().process_frame
@@ -737,7 +851,18 @@ func _ui() -> void:
 	await get_tree().create_timer(0.2).timeout
 	ui.director.stop()
 	check(shots[0] == 2 and not ui.director.busy() and ui.position == stage_base,
-			"stop() ends a performance, restores the stage and still calls back")
+		"stop() ends a performance, restores the stage and still calls back")
+	# 正式片名会压暗全屏，但不是不可打断的黑屏：真实点击应立即收掉标题并放行剧情。
+	var title_done := [0]
+	check(ui.director.play(ui.game.bundle.sequences.prologue_title_reveal, func(): title_done[0] += 1),
+		"the title-card performance starts")
+	await get_tree().create_timer(0.1).timeout
+	check(is_instance_valid(ui.director._title_layer) and ui.director.busy(),
+		"the title card is visible while its ink reveal runs")
+	_click_at(ui, ui.get_viewport_rect().get_center())
+	await get_tree().process_frame
+	check(title_done[0] == 1 and not ui.director.busy() and not is_instance_valid(ui.director._title_layer),
+		"clicking the title card skips the black-screen wait exactly once")
 	ui._toggle_menu()
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().process_frame

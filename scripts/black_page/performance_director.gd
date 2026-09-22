@@ -11,7 +11,10 @@ extends Node
 
 ## 时间轴认识的**动作**集合。**data_loader 的校验直接读这张表**——
 ## 和 narrative_runner.COMMANDS 一个规矩：加动作只改这里一处。
-const ACTIONS := ["sfx", "bgm", "fade_in", "fade_out", "shake", "flash", "wait"]
+const UI = preload("res://scripts/black_page/ui_style.gd")
+const INK_BLEED = preload("res://assets/shaders/ink_bleed.gdshader")
+
+const ACTIONS := ["sfx", "bgm", "fade_in", "fade_out", "shake", "flash", "wait", "title_card"]
 
 ## 震屏幅度（像素）。抖的是整棵界面，幅度大了像画面坏了。
 const SHAKE_AMPLITUDE := 14.0
@@ -25,6 +28,7 @@ var stage: Control
 ## 不和转场抢同一块遮罩——两者可能同时要用（演出结束时剧情还要淡出）。
 var curtain: ColorRect
 var flash: ColorRect
+var _title_layer: Control
 
 var _running := false
 ## 时间轴里还没演完的步骤数；归零 = 整段演完。
@@ -73,7 +77,9 @@ func play(sequence: Dictionary, done: Callable) -> bool:
 ## 中断当前演出（没在演就什么都不做）：延迟全部作废、幕布/闪光清干净、
 ## 舞台回原位，并把 done 调掉——等这段演出的人得往下走。
 func stop() -> void:
-	if not _running: return
+	if not _running:
+		_clear_title_layer()
+		return
 	_epoch += 1
 	_running = false
 	_pending = 0
@@ -81,6 +87,7 @@ func stop() -> void:
 	if stage != null: stage.position = _stage_base
 	if curtain != null: curtain.color.a = 0.0
 	if flash != null: flash.color.a = 0.0
+	_clear_title_layer()
 	_call_done()
 
 func busy() -> bool:
@@ -130,6 +137,7 @@ func _act(action: String, argument: Variant) -> float:
 		"flash": return _flash(float(argument))
 		"shake": return _shake(float(argument))
 		"wait": return float(argument)
+		"title_card": return _title_card(argument as Dictionary)
 		_:
 			push_warning("演出导演：不认识的动作「%s」已跳过" % action)
 			return 0.0
@@ -158,6 +166,98 @@ func _shake(seconds: float) -> float:
 		0.0, 1.0, seconds)
 	tween.tween_callback(func(): stage.position = base)
 	return seconds
+
+## 全屏章节标题。标题文字沿纸纤维渗出，再整体淡去；剧情数据只给文字与节奏。
+## 这不是启动页的特例：后续章节、结局和关键日期都能复用同一动作。
+func _title_card(config: Dictionary) -> float:
+	_clear_title_layer()
+	var reveal := maxf(float(config.get("reveal", 1.2)), 0.01)
+	var hold := maxf(float(config.get("hold", 1.0)), 0.01)
+	var fade := maxf(float(config.get("fade", 0.5)), 0.01)
+
+	_title_layer = Control.new()
+	_title_layer.name = "PerformanceTitleCard"
+	_title_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_title_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_title_layer.focus_mode = Control.FOCUS_ALL
+	_title_layer.gui_input.connect(_title_card_input)
+	stage.add_child(_title_layer)
+	_title_layer.grab_focus.call_deferred()
+
+	var backdrop := ColorRect.new()
+	# 留一点原场景的轮廓，避免低亮度屏幕上看成程序卡死后的纯黑帧。
+	backdrop.color = Color(0.004, 0.007, 0.011, 0.965)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_layer.add_child(backdrop)
+
+	var column := VBoxContainer.new()
+	column.set_anchors_preset(Control.PRESET_CENTER)
+	column.offset_left = -340.0
+	column.offset_right = 340.0
+	column.offset_top = -82.0
+	column.offset_bottom = 82.0
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 18)
+	_title_layer.add_child(column)
+
+	var title := UI.heading(str(config.get("text", "")), UI.SIZE_DISPLAY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.custom_minimum_size.y = 92.0
+	var ink := ShaderMaterial.new()
+	ink.shader = INK_BLEED
+	ink.set_shader_parameter("progress", 0.0)
+	ink.set_shader_parameter("seed", randf_range(0.0, 100.0))
+	title.material = ink
+	column.add_child(title)
+
+	var subtitle_text := str(config.get("subtitle", ""))
+	if not subtitle_text.is_empty():
+		var subtitle := UI.label(subtitle_text, UI.SIZE_SMALL, UI.TEXT_DIM)
+		subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		subtitle.modulate.a = 0.0
+		column.add_child(subtitle)
+		var subtitle_tween := create_tween()
+		_tweens.append(subtitle_tween)
+		subtitle_tween.tween_interval(reveal * 0.68)
+		subtitle_tween.tween_property(subtitle, "modulate:a", 1.0, reveal * 0.32)
+
+	var skip_hint := UI.label("点击或按确认键跳过", UI.SIZE_MICRO, UI.TEXT_MUTE)
+	skip_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	skip_hint.offset_left = -100.0
+	skip_hint.offset_right = 100.0
+	skip_hint.offset_top = -52.0
+	skip_hint.offset_bottom = -24.0
+	skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	skip_hint.modulate.a = 0.0
+	_title_layer.add_child(skip_hint)
+	var hint_tween := create_tween()
+	_tweens.append(hint_tween)
+	hint_tween.tween_interval(0.35)
+	hint_tween.tween_property(skip_hint, "modulate:a", 0.62, 0.25)
+
+	var tween := create_tween()
+	_tweens.append(tween)
+	tween.tween_method(func(value: float): ink.set_shader_parameter("progress", value), 0.0, 1.0, reveal)
+	tween.tween_interval(hold)
+	tween.tween_property(_title_layer, "modulate:a", 0.0, fade)
+	tween.tween_callback(_clear_title_layer)
+	return reveal + hold + fade
+
+## 标题卡是可跳过的演出，不是剧情闸门。吃掉本次输入再 stop，避免同一下点击
+## 穿透到下一句，把清晨第一句也一并翻过去。
+func _title_card_input(event: InputEvent) -> void:
+	var confirm: bool = event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	if event is InputEventKey:
+		confirm = event.pressed and not event.echo and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE]
+	if not confirm: return
+	if is_instance_valid(_title_layer): _title_layer.accept_event()
+	stop()
+
+func _clear_title_layer() -> void:
+	if is_instance_valid(_title_layer):
+		_title_layer.queue_free()
+	_title_layer = null
 
 func _step_done() -> void:
 	if not _running: return

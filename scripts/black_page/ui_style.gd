@@ -31,6 +31,28 @@ const AMBER_EDGE := Color(0.8784, 0.6431, 0.3686, 0.40)
 const ACT_BG := Color(0.0784, 0.1412, 0.1804, 0.62)
 const ACT_BG_HOVER := Color(0.1176, 0.2196, 0.2745, 0.80)
 
+## 统一的手绘 UI 图标集。界面只认语义键，不直接依赖文件名；以后替换整套美术时，
+## 只需要改这里的资源映射，调用方和业务逻辑都不用动。
+const ICON_TEXTURES := {
+	"案件": preload("res://assets/ui/icons/case.png"),
+	"人物": preload("res://assets/ui/icons/people.png"),
+	"线索": preload("res://assets/ui/icons/clue.png"),
+	"口袋": preload("res://assets/ui/icons/clue.png"),
+	"黑页": preload("res://assets/ui/icons/notebook.png"),
+	"保存": preload("res://assets/ui/icons/save.png"),
+	"读取": preload("res://assets/ui/icons/load.png"),
+	"重新开始": preload("res://assets/ui/icons/restart.png"),
+	"重载": preload("res://assets/ui/icons/reload.png"),
+	"雨声": preload("res://assets/ui/icons/rain.png"),
+	"音乐": preload("res://assets/ui/icons/music.png"),
+	"音效": preload("res://assets/ui/icons/sfx.png"),
+	"全屏": preload("res://assets/ui/icons/fullscreen.png"),
+	"字号": preload("res://assets/ui/icons/text_size.png"),
+	"文字速度": preload("res://assets/ui/icons/text_speed.png"),
+	"回顾": preload("res://assets/ui/icons/history.png"),
+	"关闭": preload("res://assets/ui/icons/close.png"),
+}
+
 ## 界面改成「只剩文字漂在画面上」之后，可读性全靠描边。深色描边压暗底、
 ## 亮底上自动形成暗晕，不必再给每块内容垫一层底色。
 const OUTLINE := Color(0.0118, 0.0275, 0.0392, 0.88)
@@ -328,6 +350,60 @@ static func ghost_button(text: String, size: int = SIZE_UI) -> Button:
 	button.add_theme_color_override("font_pressed_color", ACCENT)
 	return button
 
+## 剧情选择卡：悬浮在场景上，不属于通用弹窗。
+## 视觉重量来自半透明墨纸、细边和左侧菱形，不靠一整块高饱和底色。
+static func story_choice(text: String) -> Button:
+	var button := Button.new()
+	button.text = ""
+	button.custom_minimum_size.y = 62
+	button.focus_mode = Control.FOCUS_ALL
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	var normal := box(Color(0.0118, 0.0275, 0.0392, 0.78), Color(0.4941, 0.6980, 0.7686, 0.28), 6, 0)
+	normal.shadow_color = Color(0, 0, 0, 0.36)
+	normal.shadow_size = 8
+	normal.shadow_offset = Vector2(0, 4)
+	var hover := box(Color(0.035, 0.105, 0.135, 0.88), Color(0.3843, 0.7608, 0.8667, 0.88), 6, 0)
+	hover.shadow_color = Color(0, 0, 0, 0.46)
+	hover.shadow_size = 10
+	hover.shadow_offset = Vector2(0, 5)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("focus", hover)
+	button.add_theme_stylebox_override("pressed", box(Color(0.035, 0.118, 0.153, 0.94), ACCENT, 6, 0, 1))
+
+	var row := HBoxContainer.new()
+	row.name = "ChoiceContent"
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 20
+	row.offset_right = -20
+	row.add_theme_constant_override("separation", 16)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var marker := label("◆", SIZE_SMALL, Color(0.4941, 0.6980, 0.7686, 0.58))
+	marker.name = "ChoiceMarker"
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(marker)
+	var wording := label(text, SIZE_BODY, TEXT)
+	wording.name = "ChoiceText"
+	wording.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	wording.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(wording)
+	button.add_child(row)
+
+	var shift := func(active: bool):
+		var target_left := 27.0 if active else 20.0
+		var target_right := -13.0 if active else -20.0
+		var tween := button.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.set_parallel(true)
+		tween.tween_property(row, "offset_left", target_left, 0.13)
+		tween.tween_property(row, "offset_right", target_right, 0.13)
+		marker.add_theme_color_override("font_color", ACCENT if active else Color(0.4941, 0.6980, 0.7686, 0.58))
+	button.mouse_entered.connect(shift.bind(true))
+	button.mouse_exited.connect(shift.bind(false))
+	button.focus_entered.connect(shift.bind(true))
+	button.focus_exited.connect(shift.bind(false))
+	return button
+
 ## 行动项：**无底色**的列表行，只有一条底线 + 箭头 + 右侧消耗角标。
 ##
 ## 去掉底色是这次改版的核心诉求——主界面要「只剩文字漂在画面上」。
@@ -382,7 +458,11 @@ static func menu_row(text: String, hint: String = "") -> Button:
 	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	row.offset_left = 16
 	row.offset_right = -14
+	row.add_theme_constant_override("separation", 9)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon_key := _icon_key_for_text(text)
+	if not icon_key.is_empty():
+		row.add_child(_make_glyph(icon_key, Vector2(27, 27)))
 	var name_label := label(text, SIZE_SMALL, TEXT)
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -422,11 +502,8 @@ static func nav_item(text: String) -> Button:
 	box_node.alignment = BoxContainer.ALIGNMENT_CENTER
 	box_node.add_theme_constant_override("separation", 7)
 	box_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var icon := _NavGlyph.new()
-	icon.glyph = text
-	icon.custom_minimum_size = Vector2(24, 24)
+	var icon := _make_glyph(text, Vector2(34, 34))
 	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	icon.base = TEXT_DIM
 	box_node.add_child(icon)
 	var caption := label(text, SIZE_MICRO, TEXT_MUTE)
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -446,17 +523,89 @@ static func icon_button(text: String, glyph: String = "") -> Button:
 	button.add_theme_stylebox_override("hover", box(Color(1, 1, 1, 0.05), HAIR, 10, 0))
 	button.add_theme_stylebox_override("pressed", box(ACCENT_SOFT, ACCENT_EDGE, 10, 0))
 	button.add_theme_stylebox_override("focus", box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 0, 0))
-	var node := _NavGlyph.new()
-	node.glyph = glyph if not glyph.is_empty() else text
-	node.base = TEXT_MUTE
+	var node := _make_glyph(glyph if not glyph.is_empty() else text, Vector2(24, 24))
 	node.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	node.custom_minimum_size = Vector2(20, 20)
 	button.add_child(node)
 	return button
 
 
-## 图标绘制：用文字当键，画一组简单的线框图标，避免依赖图片资源。
+## 菜单文字包含实时状态（例如「雨声：开」），在这里归一成稳定的图标语义键。
+static func _icon_key_for_text(text: String) -> String:
+	if text.begins_with("保存"): return "保存"
+	if text.begins_with("读取"): return "读取"
+	if text.begins_with("重新开始"): return "重新开始"
+	if text.begins_with("重载"): return "重载"
+	if text.begins_with("雨声"): return "雨声"
+	if text.begins_with("背景音乐"): return "音乐"
+	if text.begins_with("音效"): return "音效"
+	if text.begins_with("全屏"): return "全屏"
+	if text.begins_with("字号"): return "字号"
+	if text.begins_with("文字速度"): return "文字速度"
+	if text.begins_with("回顾"): return "回顾"
+	if text.begins_with("回到房间"): return "关闭"
+	if ICON_TEXTURES.has(text): return text
+	return ""
+
+static func _make_glyph(key: String, minimum_size: Vector2) -> Control:
+	var normalized := _icon_key_for_text(key)
+	if not normalized.is_empty():
+		var icon := _ImageGlyph.new()
+		icon.texture = ICON_TEXTURES[normalized]
+		icon.custom_minimum_size = minimum_size
+		return icon
+	var fallback := _NavGlyph.new()
+	fallback.glyph = key
+	fallback.custom_minimum_size = minimum_size
+	return fallback
+
+
+## 位图图标仅负责显示状态和轻量反馈；按钮行为仍由外层控件掌管。
+## 这样图标资源可以自由替换，不会和导航、存档等业务逻辑耦合。
+class _ImageGlyph extends TextureRect:
+	const IDLE := Color(0.78, 0.84, 0.87, 0.82)
+	const ACTIVE := Color(1.0, 1.0, 1.0, 1.0)
+	const HOVER := Color(1.08, 1.08, 1.08, 1.0)
+
+	var active := false
+	var hovered := false
+	var _motion: Tween
+
+	func set_active(value: bool) -> void:
+		active = value
+		_refresh(is_inside_tree())
+
+	func _ready() -> void:
+		expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pivot_offset = size * 0.5
+		resized.connect(func(): pivot_offset = size * 0.5)
+		var parent := get_parent()
+		while parent != null:
+			if parent is Button:
+				parent.mouse_entered.connect(func(): hovered = true; _refresh(true))
+				parent.mouse_exited.connect(func(): hovered = false; _refresh(true))
+				break
+			parent = parent.get_parent()
+		_refresh(false)
+
+	func _refresh(animated: bool) -> void:
+		var target_color := HOVER if hovered else (ACTIVE if active else IDLE)
+		var target_scale := Vector2.ONE * (1.055 if hovered else 1.0)
+		if not animated:
+			modulate = target_color
+			scale = target_scale
+			return
+		if _motion != null and _motion.is_valid():
+			_motion.kill()
+		_motion = create_tween().set_parallel(true)
+		_motion.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_motion.tween_property(self, "modulate", target_color, 0.12)
+		_motion.tween_property(self, "scale", target_scale, 0.12)
+
+
+## 程序化回退图标：某个资源缺失或未来出现新语义键时，界面仍然可用。
 class _NavGlyph extends Control:
 	const GLYPH_IDLE := Color("7d909c")
 	const GLYPH_ACTIVE := Color("62c2dd")

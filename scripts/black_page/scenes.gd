@@ -8,10 +8,15 @@ extends RefCounted
 ##   · 做出选择后，场景图整体切换——调查是「第一人称去看」，不是翻数据表。
 
 const ROOM := "room"
+const ROOM_MORNING := "room_morning"
 const MONITOR := "monitor"
 const ARCHIVE := "archive"
 const NOTEBOOK := "notebook"
 const PHONE := "phone"
+const PROLOGUE_DOOR_PACKAGE := "prologue_door_package"
+const PROLOGUE_PACKAGE_OPEN := "prologue_package_open"
+const PROLOGUE_SEARCH := "prologue_search"
+const PROLOGUE_PHONE_MORNING := "prologue_phone_morning"
 const BADGE := "badge"
 const PHOTO := "photo"
 const MEETING := "meeting"
@@ -19,10 +24,15 @@ const INTERVIEW := "interview"
 
 const TABLE := {
 	ROOM: {"name": "房间", "texture": preload("res://assets/backgrounds/black_page_room_v1.png")},
+	ROOM_MORNING: {"name": "房间·清晨", "texture": preload("res://assets/backgrounds/black_page_room_morning_v1.png")},
 	MONITOR: {"name": "显示器", "texture": preload("res://assets/backgrounds/black_page_scene_monitor.png")},
 	ARCHIVE: {"name": "档案柜", "texture": preload("res://assets/backgrounds/black_page_scene_archive.png")},
 	NOTEBOOK: {"name": "黑页", "texture": preload("res://assets/backgrounds/black_page_prologue_notebook_v1.png")},
 	PHONE: {"name": "手机", "texture": preload("res://assets/backgrounds/black_page_scene_phone.png")},
+	PROLOGUE_DOOR_PACKAGE: {"name": "门外", "texture": preload("res://assets/backgrounds/black_page_prologue_door_package_v1.png")},
+	PROLOGUE_PACKAGE_OPEN: {"name": "无主包裹", "texture": preload("res://assets/backgrounds/black_page_prologue_package_v1.png")},
+	PROLOGUE_SEARCH: {"name": "搜索结果", "texture": preload("res://assets/backgrounds/black_page_prologue_search_v1.png")},
+	PROLOGUE_PHONE_MORNING: {"name": "清晨来电", "texture": preload("res://assets/backgrounds/black_page_prologue_phone_morning_v1.png")},
 	BADGE: {"name": "员工证", "texture": preload("res://assets/backgrounds/black_page_scene_badge.png")},
 	PHOTO: {"name": "旧合照", "texture": preload("res://assets/backgrounds/black_page_scene_photo.png")},
 	MEETING: {"name": "会面", "texture": preload("res://assets/backgrounds/black_page_scene_meeting.png")},

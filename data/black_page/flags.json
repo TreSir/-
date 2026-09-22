@@ -60,6 +60,27 @@
     "type": "bool",
     "default": false
   },
+  "prologue.look_phone": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.look_drawer": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.look_window": {
+    "type": "bool",
+    "default": false
+  },
+  "prologue.wait_choice": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "watch",
+      "dismiss"
+    ]
+  },
   "prologue.reply": {
     "type": "string",
     "default": "",
@@ -93,6 +114,16 @@
   "story.chapter1_open.done": {
     "type": "bool",
     "default": false
+  },
+  "story.chapter1_report_style": {
+    "type": "string",
+    "default": "",
+    "values": [
+      "",
+      "honest",
+      "guarded",
+      "direct"
+    ]
   },
   "person.zhou.identity": {
     "type": "int",
