@@ -45,14 +45,13 @@ const Typewriter = preload("res://scripts/core/typewriter.gd")
 const AudioTracks = preload("res://scripts/black_page/audio_tracks.gd")
 const Store = preload("res://scripts/core/save_store.gd")
 const UI = preload("res://scripts/black_page/ui_style.gd")
+const CasePanel = preload("res://scripts/black_page/case_panel.gd")
 const Scenes = preload("res://scripts/black_page/scenes.gd")
 const Hotspots = preload("res://scripts/black_page/hotspots.gd")
+const PortraitIdentityShader = preload("res://assets/portraits/portrait_identity.gdshader")
+const PortraitCardBackground = preload("res://assets/ui/portrait_card_bg_v1.png")
 
 const PERSON_STATUS := {"normal": "正常", "missing": "下落不明", "fugitive": "逃亡", "injured": "受伤", "dead": "死亡", "arrested": "被捕", "hidden": "隐藏", "left": "离开城市"}
-## 案件状态机（设计文档 §15-16）与结案结果的显示词。
-## locked 会被面板直接跳过，所以不在这里摆「未解锁」。
-const CASE_STATES := {"active": "调查中", "completed": "已结案"}
-const CASE_RESULTS := {"explained": "真相查清", "partial": "部分查清", "unresolved": "未能查清"}
 const RELIABILITY := {"reliable": "可靠", "dubious": "存疑", "contradictory": "矛盾", "forged": "伪造"}
 
 ## 文字速度档位。**倍率**，不是绝对字/秒——见 _type_scale_index 的注释。
@@ -370,6 +369,7 @@ func _set_speaker(line: String) -> void:
 		_speaker.hide()
 		return
 	_speaker.texture = texture
+	_apply_portrait_identity(_speaker, person_id)
 	_speaker.show()
 	if _speaker_tween != null and _speaker_tween.is_valid():
 		_speaker_tween.kill()
@@ -1308,7 +1308,7 @@ func _load_from_menu() -> void:
 	if not error.is_empty():
 		_message(error)
 		return
-	_enter_room("", "已读取存档。")
+	_enter_room("", "主存档不可用，已从备份恢复上一次进度。" if game.last_save_recovered else "已读取存档。")
 
 # ── 左侧栏的四个系统面板 ─────────────────────────────────────────────────
 func _begin_panel(key: String, chip_text: String, title_text: String) -> void:
@@ -1340,70 +1340,8 @@ func _open_pocket() -> void:
 
 func _open_case() -> void:
 	_begin_panel("case", "案件", "正在调查的事")
-	var found := 0
-	for id in game.bundle.cases:
-		var state: String = game.flag("case." + id + ".state")
-		# 没解锁的案件不摆出来（设计文档 §15-16：0 或 1 个进行中的案件）。
-		if state == "locked": continue
-		found += 1
-		var entry: Dictionary = game.bundle.cases[id]
-		var column := VBoxContainer.new()
-		column.add_theme_constant_override("separation", 14)
-		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var head := HBoxContainer.new()
-		head.add_theme_constant_override("separation", 12)
-		head.add_child(UI.heading(str(entry.name), UI.SIZE_TITLE))
-		var chip := UI.accent_chip(CASE_STATES[state])
-		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		head.add_child(chip)
-		column.add_child(head)
-		column.add_child(UI.flow(str(entry.intro), UI.SIZE_SMALL + 1, Color("c6d5dd")))
-		var note := _case_note(str(id), state)
-		if not note.is_empty():
-			column.add_child(UI.flow(note, UI.SIZE_SMALL, UI.TEXT_DIM))
-		column.add_child(UI.rule())
-		column.add_child(_label_micro("已知事实"))
-		column.add_child(_clue_chips(id))
-		column.add_child(_label_micro("仍未回答"))
-		var asked := 0
-		for question in entry.questions:
-			if game.matches(question.get("requires", [])):
-				asked += 1
-				column.add_child(_bullet(str(question.text)))
-		if asked == 0: column.add_child(UI.flow("暂时没有新的疑点。", UI.SIZE_SMALL, UI.TEXT_DIM))
-		column.add_child(_label_micro("调查方向"))
-		var listed := 0
-		for action_id in game.bundle.actions:
-			var action: Dictionary = game.bundle.actions[action_id]
-			# 能走的都摆出来：没有行动预算，就不存在「今天做不了」的方向——
-			# 门槛只剩数据里的 requires（不满足的不显示，不是灰掉）。
-			if action.case != id or not game.available(action_id): continue
-			listed += 1
-			var row := UI.action_row(str(action.name), "")
-			row.pressed.connect(_investigate.bind(action_id))
-			column.add_child(row)
-		if listed == 0:
-			column.add_child(UI.flow("暂时没有新的方向。可以先打开黑页作出决定，或进入次日看看。", UI.SIZE_SMALL, UI.TEXT_DIM))
-		modal_rows.add_child(column)
-	if found == 0:
-		modal_rows.add_child(UI.flow("还没有接触到任何案件。", UI.SIZE_BODY, UI.TEXT_DIM))
+	CasePanel.populate(modal_rows, game, _investigate)
 	_end_panel("合上案卷")
-
-## 案件的进展注脚：从现有状态**推导**，不为此新存旗标。
-##
-##   · 已结案 → 写出结果（结案结果由案件数据裁定，这里只翻成人话）
-##   · 关键人物不在了 → 先说这个：有些门从此永远关着，比「查到哪了」更要紧
-##   · 按裁定规则现在就够格拿到「非兜底」结果 → 线索已经连起来了
-func _case_note(id: String, state: String) -> String:
-	if state == "completed":
-		return "已结案：%s。" % CASE_RESULTS.get(str(game.flag("case." + id + ".result")), "结果不详")
-	var gone: Array = []
-	for person in game.bundle.people:
-		if game.bundle.people[person].case != id: continue
-		if game.person_flag(person, "status") == "dead": gone.append(str(game.bundle.people[person].name))
-	if not gone.is_empty(): return "关键人物已不在：" + "、".join(gone) + "。"
-	if not game.case_outlook(id).is_empty(): return "线索已经连起来了。"
-	return ""
 
 ## 人物图鉴：先是一排肖像卡，点进去才是这个人的档案。
 func _open_people() -> void:
@@ -1426,13 +1364,7 @@ func _open_people() -> void:
 		var column := VBoxContainer.new()
 		column.add_theme_constant_override("separation", 10)
 		column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var art := TextureRect.new()
-		art.texture = _portrait_texture(str(id))
-		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		art.custom_minimum_size = Vector2(178, 190)
-		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		column.add_child(art)
+		column.add_child(_portrait_card(str(id), Vector2(178, 190)))
 		var name_row := HBoxContainer.new()
 		name_row.add_theme_constant_override("separation", 8)
 		name_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1469,13 +1401,7 @@ func _open_person(id: String) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 30)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var art := TextureRect.new()
-	art.texture = _portrait_texture(id)
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	art.custom_minimum_size = Vector2(288, 384)
-	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(art)
+	row.add_child(_portrait_card(id, Vector2(288, 384)))
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 14)
@@ -1512,18 +1438,47 @@ func _open_person(id: String) -> void:
 	modal_rows.add_child(row)
 	_end_panel("返回图鉴", _open_people)
 
-## 肖像按「身份确认 %」分三档：低于 50 重模糊，50~99 轻模糊，到 100 才清楚。
+## 色底是共享 UI 图层，人物立绘独立叠放；之后补图鉴栏位时复用这个组件。
+func _portrait_card(person_id: String, card_size: Vector2) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = card_size
+	holder.clip_contents = true
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var solid := ColorRect.new()
+	solid.color = Color("05101a")
+	solid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(solid)
+	solid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var ground := TextureRect.new()
+	ground.texture = PortraitCardBackground
+	ground.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ground.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	ground.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(ground)
+	ground.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var art := TextureRect.new()
+	art.texture = _portrait_texture(person_id)
+	_apply_portrait_identity(art, person_id)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(art)
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	return holder
+
+## 肖像按「身份确认 %」分三档：低于 50 锁定，50~99 模糊，到 100 清楚。
 func _portrait_texture(person_id: String) -> Texture2D:
-	var identity := int(game.person_flag(person_id, "identity"))
-	var suffix := ""
-	if identity < 50:
-		suffix = "_locked"
-	elif identity < 100:
-		suffix = "_blur"
-	var path := "res://assets/portraits/black_page_portrait_%s%s.png" % [person_id, suffix]
+	var path := "res://assets/portraits/black_page_portrait_%s.png" % person_id
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path)
+
+func _apply_portrait_identity(art: TextureRect, person_id: String) -> void:
+	var identity := int(game.person_flag(person_id, "identity"))
+	var material := ShaderMaterial.new()
+	material.shader = PortraitIdentityShader
+	material.set_shader_parameter("identity_state", 2 if identity < 50 else (1 if identity < 100 else 0))
+	art.material = material
 
 ## 剧情回顾：把看过的文字**倒着**列出来（最近的在最上面，翻起来顺手）。
 ## 面板照现有那几个写（_begin_panel / _end_panel），不另立一套。
@@ -1585,30 +1540,6 @@ func _end_chapter(choice: String) -> void:
 
 func _label_micro(text: String) -> Label:
 	return UI.label(text, UI.SIZE_MICRO, UI.ACCENT)
-
-func _clue_chips(case_id: String) -> Control:
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", 8)
-	flow.add_theme_constant_override("v_separation", 8)
-	for clue in game.bundle.clues:
-		if game.owns(clue) and str(game.bundle.clues[clue].case) == case_id:
-			flow.add_child(UI.chip(str(game.bundle.clues[clue].name)))
-	if flow.get_child_count() == 0:
-		return UI.flow("还没有掌握任何事实。", UI.SIZE_SMALL, UI.TEXT_DIM)
-	return flow
-
-func _bullet(text: String) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 11)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var tick := ColorRect.new()
-	tick.color = UI.AMBER_EDGE
-	tick.custom_minimum_size = Vector2(2, 0)
-	tick.size_flags_vertical = Control.SIZE_FILL
-	tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(tick)
-	row.add_child(UI.flow(text, UI.SIZE_SMALL + 1, Color("c6d5dd")))
-	return row
 
 func _clue_rows() -> Array:
 	var out: Array = []

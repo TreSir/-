@@ -15,6 +15,7 @@ const CaseManager = preload("res://scripts/core/case_manager.gd")
 const DeathNoteSystem = preload("res://scripts/core/death_note_system.gd")
 ## 正式存档的槽名（写、读、「有没有存档」都走它）。
 const SLOT := "black_page_slot_1"
+var save_slot := SLOT
 ## 落笔前的自动检查点（「回溯至使用死亡笔记之前」读的就是这个槽）。
 ## **和正式存档分开两个槽**：笔记的动作不该挤掉玩家自己的存档，
 ## 而它必须在落笔之后仍然活着——回溯正是回来读它。
@@ -25,6 +26,7 @@ var pending: Array = []
 var active_action := ""
 var ticket := 0
 var directory := "res://data/black_page"
+var last_save_recovered := false
 
 func open() -> String:
 	var loader = Loader.new()
@@ -38,6 +40,7 @@ func open() -> String:
 func new_game() -> void:
 	ticket += 1
 	active_action = ""
+	last_save_recovered = false
 	pending.clear()
 	# 检查点属于上一局的世界：留着它，新世界的「回溯」就可能退到别人的剧情里。
 	SaveManager.erase(checkpoint_slot)
@@ -291,7 +294,7 @@ func write_error(id: String) -> String:
 func write_name(id: String) -> String:
 	var blocked := write_error(id)
 	if not blocked.is_empty(): return blocked
-	var check_error := SaveManager.write(checkpoint_slot, snapshot())
+	var check_error := SaveManager.write(checkpoint_slot, snapshot(), false)
 	if not check_error.is_empty(): return "无法写下这一笔（检查点未存下）：" + check_error
 	pending.append({"person": id, "name": person_name(id), "valid": DeathNoteSystem.knows_true_name(GameState.flags, id), "day": int(flag("day"))})
 	_log("你写下了「%s」。墨水慢慢干了。\n窗外的车流声没有变化。" % person_name(id))
@@ -385,35 +388,46 @@ func snapshot() -> Dictionary:
 ## 它不持有游戏数据，问不了 bundle。
 func validate_save(data: Dictionary, definitions: Dictionary, catalog: Dictionary, content: Dictionary = {}) -> String:
 	if content.is_empty(): content = bundle
-	return SaveManager.validate(data, definitions, catalog, content)
+	var prepared: Dictionary = SaveManager.prepare(data, definitions, catalog, content)
+	return str(prepared.error) if prepared.has("error") else ""
 
 func restore(data: Dictionary) -> String:
-	var error := validate_save(data, bundle.flags, bundle.catalog)
-	if not error.is_empty(): return error
+	var prepared: Dictionary = SaveManager.prepare(data, bundle.flags, bundle.catalog, bundle)
+	if prepared.has("error"): return str(prepared.error)
+	_restore_validated(prepared.data)
+	return ""
+
+func _restore_validated(data: Dictionary) -> void:
 	cancel_action()
 	GameState.restore(data.state)
 	pending = data.pending.duplicate(true)
 	journal = data.journal.duplicate()
+	last_save_recovered = false
 	changed.emit()
-	return ""
 
 func save_game() -> String:
 	if not active_action.is_empty(): return "调查结束后才能存档。"
-	return SaveManager.write(SLOT, snapshot())
+	# 这局若刚从备份读回，主文件可能虽能解析却过不了世界状态校验；
+	# 第一次重新保存时保留那份有效备份，避免把坏主档复制到备份上。
+	var error := SaveManager.write(save_slot, snapshot(), not last_save_recovered)
+	if error.is_empty(): last_save_recovered = false
+	return error
 
 func load_game() -> String:
-	var loaded: Dictionary = SaveManager.read(SLOT)
-	return str(loaded.error) if loaded.has("error") else restore(loaded.data)
+	var loaded: Dictionary = SaveManager.load_validated(save_slot, bundle.flags, bundle.catalog, bundle, true)
+	if loaded.has("error"): return str(loaded.error)
+	_restore_validated(loaded.data)
+	last_save_recovered = bool(loaded.get("recovered", false))
+	return ""
 
 ## 有没有**真的能续**的存档。开始页据此决定要不要显示「继续游戏」——
 ## 只查文件读不读得出来是不够的：内容过不了校验（版本不符 / 结构损坏 /
 ## 引用了已经不存在的结局）时，「继续游戏」点下去只会把错误打在
 ## 开始页看不见的字幕带上，玩家会以为游戏坏了。
 ## slot 参数：检查点回溯（checkpoint_ready）也走它；游戏里一律走默认槽位。
-func has_save(slot: String = SLOT) -> bool:
-	var loaded: Dictionary = SaveManager.read(slot)
-	if loaded.has("error"): return false
-	return validate_save(loaded.data, bundle.flags, bundle.catalog).is_empty()
+func has_save(slot: String = "") -> bool:
+	var target := save_slot if slot.is_empty() else slot
+	return not SaveManager.load_validated(target, bundle.flags, bundle.catalog, bundle, target == save_slot).has("error")
 
 func reload_data() -> String:
 	if not active_action.is_empty(): return "请先结束当前调查再重载。"

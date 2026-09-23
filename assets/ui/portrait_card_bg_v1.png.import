@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c7jvne172fkth"
-path="res://.godot/imported/black_page_portrait_xu_locked.png-557dea69a95ef8b52889959a12dc6446.ctex"
+uid="uid://dn8q8haoa7oo7"
+path="res://.godot/imported/portrait_card_bg_v1.png-ed141e7292a0b0bfded70f9239480a8c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/portraits/black_page_portrait_xu_locked.png"
-dest_files=["res://.godot/imported/black_page_portrait_xu_locked.png-557dea69a95ef8b52889959a12dc6446.ctex"]
+source_file="res://assets/ui/portrait_card_bg_v1.png"
+dest_files=["res://.godot/imported/portrait_card_bg_v1.png-ed141e7292a0b0bfded70f9239480a8c.ctex"]
 
 [params]
 

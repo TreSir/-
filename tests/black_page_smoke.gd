@@ -8,6 +8,7 @@ const CodexManager = preload("res://scripts/core/codex_manager.gd")
 const CaseManager = preload("res://scripts/core/case_manager.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 const Store = preload("res://scripts/core/save_store.gd")
+const SaveManager = preload("res://scripts/core/save_manager.gd")
 ## 断链的收场文案：断链面板上该出现哪几个字，断言读的就是这一份。
 const FailureManager = preload("res://scripts/core/failure_manager.gd")
 ## 房间热区表：界面按它建热区，断言也按它数——同一个数只能有一个出处。
@@ -19,7 +20,7 @@ var failures := 0
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。贴着总数减一：最后一条 check 就是门槛自己，
 ## 它跑到的时候还没把自己数进去。
-const UI_CHECK_FLOOR := 261
+const UI_CHECK_FLOOR := 289
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -106,6 +107,7 @@ func _run() -> void:
 	add_child(game)
 	# 槽位隔离：冒烟测试**绝不碰真实存档**——进度槽和落笔检查点槽都换成 smoke 槽，
 	# 否则跑一次测试就会把玩家的自动检查点覆盖掉。
+	game.save_slot = "black_page_smoke_progress"
 	game.checkpoint_slot = "black_page_smoke_checkpoint"
 	var error: String = game.open()
 	check(error.is_empty(), "content compiles: " + error)
@@ -125,6 +127,71 @@ func _run() -> void:
 	var store = Store.new()
 	check(store.write("black_page_smoke_roundtrip", written).is_empty(), "save write")
 	check(store.write("black_page_smoke_roundtrip", written).is_empty(), "save overwrite")
+	# 旧版同内容存档在内存中升级；原文件直到下一次主动保存前保持不变。
+	var migration_slot := "black_page_smoke_migration"
+	store.erase(migration_slot)
+	var legacy := written.duplicate(true)
+	legacy.schema = 1
+	check(store.write(migration_slot, legacy).is_empty(), "legacy save fixture written")
+	var smoke_save_slot: String = game.save_slot
+	game.save_slot = migration_slot
+	var prepared: Dictionary = SaveManager.load_validated(migration_slot, game.bundle.flags, game.bundle.catalog, game.bundle, true)
+	check(not prepared.has("error") and prepared.data.schema == SaveManager.SCHEMA
+			and _json_round_trip(prepared.data.state) == _json_round_trip(legacy.state)
+			and store.read(migration_slot).data.schema == 1,
+		"schema 1 migrates without changing the original file")
+	check(game.has_save() and game.load_game().is_empty() and game.snapshot().schema == SaveManager.SCHEMA,
+		"the regular continue-game path loads an old save")
+	check(game.save_game().is_empty()
+			and store.read(migration_slot).data.schema == SaveManager.SCHEMA
+			and store.read_backup(migration_slot).data.schema == 1,
+		"saving the migrated payload keeps the legacy file as backup")
+	# 主文件损坏时只能读取通过完整校验的备份；恢复不覆盖损坏文件。
+	var migration_path := Store.DIRECTORY.path_join(migration_slot + ".json")
+	var broken_file := FileAccess.open(migration_path, FileAccess.WRITE)
+	if broken_file != null:
+		broken_file.store_string("{broken")
+		broken_file.close()
+	check(SaveManager.load_validated(migration_slot, game.bundle.flags, game.bundle.catalog, game.bundle).has("error"),
+		"checkpoint-like load does not fall back to an older backup")
+	prepared = SaveManager.load_validated(migration_slot, game.bundle.flags, game.bundle.catalog, game.bundle, true)
+	check(not prepared.has("error") and prepared.get("recovered", false)
+			and prepared.data.schema == SaveManager.SCHEMA and store.read(migration_slot).has("error"),
+		"corrupt primary loads validated backup without overwriting it")
+	check(game.has_save() and game.load_game().is_empty() and game.last_save_recovered,
+		"the regular continue-game path recovers a validated backup")
+	check(game.save_game().is_empty() and store.read_backup(migration_slot).data.schema == 1,
+		"saving after recovery preserves the valid backup")
+	var invalid_primary := game.snapshot()
+	invalid_primary.state.flags.day = -1
+	check(store.write(migration_slot, invalid_primary).is_empty(), "invalid primary state fixture written")
+	var backup_bytes := FileAccess.get_file_as_bytes(migration_path + ".bak")
+	check(game.load_game().is_empty() and game.last_save_recovered and game.save_game().is_empty()
+			and FileAccess.get_file_as_bytes(migration_path + ".bak") == backup_bytes,
+		"recovery from an invalid state keeps the valid backup on the next save")
+	var future_primary := game.snapshot()
+	future_primary.schema = SaveManager.SCHEMA + 1
+	check(store.write(migration_slot, future_primary).is_empty(), "future schema fixture written")
+	check(SaveManager.load_validated(migration_slot, game.bundle.flags, game.bundle.catalog, game.bundle, true).has("error")
+			and not game.has_save(), "a future schema does not silently downgrade to an older backup")
+	check(store.erase(migration_slot).is_empty() and store.read(migration_slot).has("error")
+			and store.read_backup(migration_slot).has("error"), "erasing a slot also erases its backup")
+	game.save_slot = smoke_save_slot
+	var future := legacy.duplicate(true)
+	future.schema = SaveManager.SCHEMA + 1
+	check(SaveManager.prepare(future, game.bundle.flags, game.bundle.catalog, game.bundle).has("error"),
+		"unknown future schema is rejected")
+	var invalid_slot := "black_page_smoke_invalid_migration"
+	store.erase(invalid_slot)
+	var invalid_legacy := legacy.duplicate(true)
+	invalid_legacy.state.flags.day = -1
+	check(store.write(invalid_slot, invalid_legacy).is_empty(), "invalid legacy fixture written")
+	var invalid_path := Store.DIRECTORY.path_join(invalid_slot + ".json")
+	var original_bytes := FileAccess.get_file_as_bytes(invalid_path)
+	check(SaveManager.load_validated(invalid_slot, game.bundle.flags, game.bundle.catalog, game.bundle, true).has("error")
+			and FileAccess.get_file_as_bytes(invalid_path) == original_bytes,
+		"failed migration leaves the source file untouched")
+	store.erase(invalid_slot)
 	# ── 死亡笔记：守卫 / 检查点 / 回溯（设计文档 §28）───────────────────────
 	# 能不能写、为什么不能写，只有一份判断——黑页面板上显示的就是它。
 	check(game.write_error("zhou").contains("黑页上") and game.write_error("linmo").contains("见过")
@@ -909,6 +976,8 @@ func _ui() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(ui.modal.visible and ui._open_panel == "case", "case panel opens")
+	check(_has_text(ui.modal_rows, "许妍失踪案") and _has_text(ui.modal_rows, "还原公交站监控"),
+		"extracted case panel still shows the active case and available investigation")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://screenshots/black_page_case.png")
