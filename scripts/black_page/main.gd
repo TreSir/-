@@ -150,6 +150,7 @@ func _ready() -> void:
 	game.name = "Investigation"
 	add_child(game)
 	game.changed.connect(refresh)
+	game.world_replaced.connect(_on_world_replaced)
 	# 结局是这一周的终点：音乐收掉，让最后那段文字自己说话。
 	EventBus.ending_reached.connect(func(_id: String, _entry: String):
 		if is_instance_valid(music): music.fade_out(3.0))
@@ -610,6 +611,11 @@ func record_line(text: String) -> void:
 	if _history.size() > HISTORY_CAP:
 		_history = _history.slice(_history.size() - HISTORY_CAP)
 
+## 世界被整份换掉（新开一局 / 读档 / 回溯）→「看过的文字」跟着作废。
+## 回顾读的是 main 自己攒的这份，不清就会把上一局、上一条世界线的正文漏给玩家。
+func _on_world_replaced() -> void:
+	_history.clear()
+
 ## 播一段叙述。点一下画面推进一句；**最后一句读完、再点一下才执行 on_done**。
 ## 调查的结算、回房间都挂在 on_done 上——主界面不摆任何推进按钮。
 ##
@@ -970,7 +976,7 @@ func _unlock_nav(key: String) -> void:
 func _transition_config(scene_id: String, action_id: String = "") -> Dictionary:
 	var table: Dictionary = game.bundle.get("transitions", {})
 	var merged: Dictionary = {
-		"kind": "fade",
+		"kind": Scenes.KIND_FADE,
 		"out": UI.TRANSITION_OUT,
 		"in": UI.TRANSITION_IN,
 		"color": "000000",
@@ -992,11 +998,11 @@ func _transition_to(id: String, action_id: String = "") -> void:
 	var in_time := float(config.get("in", UI.TRANSITION_IN))
 	_fade.color = Color(str(config.get("color", "000000")))
 
-	if kind == "cut":
+	if kind == Scenes.KIND_CUT:
 		_apply_scene(id)
 		return
 
-	if kind == "slide":
+	if kind == Scenes.KIND_SLIDE:
 		await _transition_slide(id, out_time, in_time)
 		return
 

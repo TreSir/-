@@ -22,6 +22,14 @@ const PHOTO := "photo"
 const MEETING := "meeting"
 const INTERVIEW := "interview"
 
+## 转场种类。**校验（data_loader._compile_transitions）和执行（main._transition_to）
+## 读这一张表**——和 Runner.COMMANDS / Director.ACTIONS 一个规矩：加一种只改这里，
+## 数据里把 kind 拼错会在加载期报出来，而不是静默退回淡入淡出。
+const KIND_FADE := "fade"
+const KIND_CUT := "cut"
+const KIND_SLIDE := "slide"
+const KINDS := [KIND_FADE, KIND_CUT, KIND_SLIDE]
+
 const TABLE := {
 	ROOM: {"name": "房间", "texture": preload("res://assets/backgrounds/black_page_room_v1.png")},
 	ROOM_MORNING: {"name": "房间·清晨", "texture": preload("res://assets/backgrounds/black_page_room_morning_v1.png")},

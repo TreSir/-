@@ -20,7 +20,7 @@ var failures := 0
 ## 而 PASS/FAIL 只看 failures，于是出现「PASS (53 checks)」这种假通过。
 ## 加断言或删断言后，这个数要跟着改。贴着总数减一：最后一条 check 就是门槛自己，
 ## 它跑到的时候还没把自己数进去。
-const UI_CHECK_FLOOR := 289
+const UI_CHECK_FLOOR := 296
 var game = Investigation.new()
 
 func _ready() -> void: _run.call_deferred()
@@ -693,6 +693,24 @@ func _run() -> void:
 	broken.sequences.prologue_title_reveal.steps = [{"at": 0.0, "title_card": {"text": "", "hold": -1.0}}]
 	check(not loader._compile_sequences(broken) and loader.error.contains("标题文字不能为空"),
 		"title cards reject incomplete data at compile time")
+	# 转场配置（transitions.json）以前一个字都不校验：分组拼错、场景 id 写错、
+	# kind 拼错，全都静默退回默认淡入淡出——配置改了却没生效，最难查的那种坏。
+	broken = compiled.duplicate(true)
+	broken.transitions.scene = {"notebook": {"kind": "cut"}}
+	check(not loader._compile_transitions(broken) and loader.error.contains("未知分组"),
+		"an unknown transition group is rejected at compile time")
+	broken = compiled.duplicate(true)
+	broken.transitions.scenes.no_such_scene = {"kind": "fade"}
+	check(not loader._compile_transitions(broken) and loader.error.contains("no_such_scene"),
+		"a transition for an unknown scene is rejected at compile time")
+	broken = compiled.duplicate(true)
+	broken.transitions.default = {"kind": "fadee"}
+	check(not loader._compile_transitions(broken) and loader.error.contains("未知转场"),
+		"an unknown transition kind is rejected instead of silently fading")
+	broken = compiled.duplicate(true)
+	broken.transitions.actions.photo.out = -1.0
+	check(not loader._compile_transitions(broken) and loader.error.contains("正数"),
+		"transition durations are validated at compile time")
 	# 小游戏数据（minigames.json）的校验：场景 / 参数 / 结果声明在加载期就报出来；
 	# 结果类型词表读的是代码里那一张（MiniGameResult.TYPES）——数据少写一个也拦住。
 	broken = compiled.duplicate(true)
@@ -837,6 +855,14 @@ func _ui() -> void:
 	check((ui._history as Array).size() >= 45, "prologue text lands in the review history")
 	# 日志同理：序章的每一句都要经由 game 的口子落进去，结算 / 回顾才拿得到全文。
 	check(ui.game.journal.size() >= 50, "prologue text lands in the journal")
+	# 「回顾」跟着世界作废：新开一局 / 读档 / 回溯之后不许漏出上一局的正文。
+	# 这里走 restore(当前快照)——它和读档、回溯是同一条还原路径，
+	# 又不会真的把世界换掉，后面的界面断言照常跑。
+	ui.record_line("这一句只为验证回顾会跟着世界一起作废。")
+	check(str(ui._history.back()) == "这一句只为验证回顾会跟着世界一起作废。",
+		"record_line lands in the review history")
+	check(ui.game.restore(ui.game.snapshot()).is_empty(), "the world round-trips through the restore path")
+	check((ui._history as Array).is_empty(), "a replaced world drops the review history")
 	if "--capture-render" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.1).timeout
 		await RenderingServer.frame_post_draw

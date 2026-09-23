@@ -86,6 +86,7 @@ func compile(directory: String = "res://data/black_page") -> Dictionary:
 		_fail("endings", "", "兜底结局必须具有最低优先级")
 		return {}
 	if not _compile_sequences(result): return {}
+	if not _compile_transitions(result): return {}
 	if not _compile_minigames(result): return {}
 	if not _compile_codex(result): return {}
 	if not _compile_stories(result): return {}
@@ -246,6 +247,57 @@ func _validate_performance(action: String, argument: Variant, pointer: String) -
 				var value: Variant = card.get(field, 1.0)
 				if not (value is float or value is int) or float(value) <= 0.0:
 					return _fail("sequences", pointer + "/title_card/" + field, "时长必须是正数")
+	return true
+
+## 转场配置（transitions.json）的校验。
+##
+## 这张表以前一个字都不校验：分组拼成 `scene`、场景 id 写错、kind 写成 "fadee"，
+## 全都静默退回默认淡入淡出——配置改了却没生效，是最难查的那种坏。
+## 三层优先级（行动 > 场景 > 默认）在 main._transition_config 里合并，这里只管形状。
+func _compile_transitions(bundle: Dictionary) -> bool:
+	var table: Dictionary = bundle.transitions
+	for group in table:
+		if group not in ["default", "scenes", "actions"]:
+			return _fail("transitions", "/" + str(group), "未知分组，可用：default / scenes / actions")
+	if table.has("default") and not _validate_transition(table.get("default"), "/default"):
+		return false
+	for group in ["scenes", "actions"]:
+		var rows: Variant = table.get(group, {})
+		if not rows is Dictionary:
+			return _fail("transitions", "/" + group, group + " 必须为对象")
+		for id in rows:
+			var pointer := "/" + str(group) + "/" + str(id)
+			# 键本身就是一条引用：写错了永远命中不到，等于白配——和别处同一套查法。
+			if group == "scenes" and not Scenes.has(str(id)):
+				return _fail("transitions", pointer, "未知场景，这条转场永远用不上：" + str(id))
+			if group == "actions" and not bundle.actions.has(str(id)):
+				return _fail("transitions", pointer, "未知行动，这条转场永远用不上：" + str(id))
+			if not _validate_transition(rows[id], pointer): return false
+	return true
+
+## 一条转场配置：字段白名单 + 值形。kind 读场景表里那张词表（scenes.gd.KINDS），
+## 和 COMMANDS / ACTIONS 同一个规矩：加一种转场只改一处。
+func _validate_transition(config: Variant, pointer: String) -> bool:
+	if not config is Dictionary:
+		return _fail("transitions", pointer, "转场配置必须为对象")
+	for key in config:
+		if key not in ["kind", "out", "in", "color"]:
+			return _fail("transitions", pointer + "/" + str(key), "未知字段，可用：kind / out / in / color")
+	if config.has("kind") and not str(config.kind) in Scenes.KINDS:
+		return _fail("transitions", pointer + "/kind",
+				"未知转场「%s」，可用：%s" % [str(config.kind), ", ".join(Scenes.KINDS)])
+	for field in ["out", "in"]:
+		if not config.has(field): continue
+		var seconds: Variant = config[field]
+		if not (seconds is float or seconds is int) or float(seconds) <= 0.0:
+			return _fail("transitions", pointer + "/" + field, "时长必须是正数秒")
+	if config.has("color"):
+		var hex := str(config.color).lstrip("#")
+		if not hex.length() in [6, 8]:
+			return _fail("transitions", pointer + "/color", "颜色必须是 6 或 8 位十六进制：" + str(config.color))
+		for index in hex.length():
+			if "0123456789abcdefABCDEF".find(hex[index]) < 0:
+				return _fail("transitions", pointer + "/color", "颜色里有非十六进制字符：" + str(config.color))
 	return true
 
 ## 小游戏（minigames.json）的校验：名字 / 场景存在 / 参数形状，

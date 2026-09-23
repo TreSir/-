@@ -1,6 +1,10 @@
 extends Node
 ## 调查编排。GameState 仍是强类型状态的唯一持有者——本模块是唯一允许写它的地方。
 signal changed
+## 整个世界被**整份换掉**：新开一局、读档、断链回溯。
+## 和 changed 分开是有必要的——「状态动了一下」不该清掉界面这一局攒下的东西，
+## 只有世界换成另一份时才该清（现在唯一的用户是 main 的「回顾」）。
+signal world_replaced
 const Loader = preload("res://scripts/black_page/data_loader.gd")
 const Rules = preload("res://scripts/core/rules.gd")
 const SaveManager = preload("res://scripts/core/save_manager.gd")
@@ -49,6 +53,7 @@ func new_game() -> void:
 	# 改台词只改数据文件，代码不掺内容。
 	journal = []
 	GameState.reset()
+	world_replaced.emit()
 	changed.emit()
 
 ## 点亮一个侧栏入口。
@@ -403,6 +408,8 @@ func _restore_validated(data: Dictionary) -> void:
 	pending = data.pending.duplicate(true)
 	journal = data.journal.duplicate()
 	last_save_recovered = false
+	# 读档和回溯都走到这里：换世界 = 上一份世界线上「看过的文字」一并作废。
+	world_replaced.emit()
 	changed.emit()
 
 func save_game() -> String:
